@@ -36,15 +36,15 @@ NC='\033[0m' # No Color
 # ============================================================================
 
 log_info() {
-    echo -e "${BLUE}[INFO]${NC} $1"
+    echo -e "${BLUE}[INFO]${NC} $1" >&2
 }
 
 log_success() {
-    echo -e "${GREEN}[SUCCESS]${NC} $1"
+    echo -e "${GREEN}[SUCCESS]${NC} $1" >&2
 }
 
 log_warn() {
-    echo -e "${YELLOW}[WARN]${NC} $1"
+    echo -e "${YELLOW}[WARN]${NC} $1" >&2
 }
 
 log_error() {
@@ -113,6 +113,26 @@ check_api_key() {
     if [[ -z "${LAMBDA_API_KEY:-}" ]]; then
         die "LAMBDA_API_KEY not set. Use --api-key-file or set LAMBDA_API_KEY environment variable. Get your API key from https://cloud.lambdalabs.com/api-keys"
     fi
+}
+
+is_interactive() {
+    [[ -t 0 ]]
+}
+
+prompt_selection() {
+    local prompt="$1"
+    local max="$2"
+    local selection
+
+    while true; do
+        echo -en "${YELLOW}[SELECT]${NC} $prompt (1-$max): " >&2
+        read -r selection
+        if [[ "$selection" =~ ^[0-9]+$ ]] && [[ "$selection" -ge 1 ]] && [[ "$selection" -le "$max" ]]; then
+            echo "$selection"
+            return 0
+        fi
+        log_error "Invalid selection. Please enter a number between 1 and $max."
+    done
 }
 
 # ============================================================================
@@ -185,7 +205,8 @@ terminate_instance() {
 
 delete_filesystem() {
     local filesystem_id="$1"
-    api_call DELETE "/file-systems/${filesystem_id}"
+    # Note: Lambda API uses /filesystems (no hyphen) for DELETE, but /file-systems for GET/POST
+    api_call DELETE "/filesystems/${filesystem_id}"
 }
 
 # ============================================================================
@@ -283,8 +304,236 @@ get_all_regions_for_gpu() {
     response=$(get_instance_types)
 
     echo "$response" | jq -r --arg gpu "$gpu_type" '
-        .data[$gpu].regions_with_capacity_available | map(.name) | .[]
+        .data[$gpu].regions_with_capacity_available // [] | map(.name) | .[]
     '
+}
+
+# ============================================================================
+# Interactive Selection Functions
+# ============================================================================
+
+scan_local_ssh_keys() {
+    local keys=()
+    if [[ -d "$HOME/.ssh" ]]; then
+        while IFS= read -r -d '' pubkey; do
+            keys+=("$pubkey")
+        done < <(find "$HOME/.ssh" -maxdepth 1 -name "*.pub" -print0 2>/dev/null)
+    fi
+    printf '%s\n' "${keys[@]}"
+}
+
+generate_ssh_key() {
+    local key_name="${1:-cloudkitchens-challenge}"
+    local key_path="$HOME/.ssh/$key_name"
+
+    if ! command -v ssh-keygen &> /dev/null; then
+        die "ssh-keygen is required but not installed."
+    fi
+
+    if [[ -f "$key_path" ]]; then
+        log_warn "Key already exists at $key_path"
+        echo "$key_path"
+        return 0
+    fi
+
+    log_info "Generating new SSH key at $key_path..."
+    ssh-keygen -t ed25519 -f "$key_path" -N "" -C "$key_name"
+
+    if [[ -f "$key_path" ]]; then
+        log_success "SSH key generated: $key_path"
+        echo "$key_path"
+    else
+        die "Failed to generate SSH key"
+    fi
+}
+
+interactive_select_gpu() {
+    log_info "Fetching available GPU types..."
+    local response
+    response=$(get_instance_types)
+
+    if echo "$response" | jq -e '.error' &>/dev/null; then
+        die "API error: $(echo "$response" | jq -r '.error.message // .error')"
+    fi
+
+    # Get available GPUs sorted by price (just names)
+    local gpu_names_str
+    gpu_names_str=$(echo "$response" | jq -r '
+        [.data | to_entries[] |
+        select(.value.regions_with_capacity_available | length > 0) |
+        {
+            name: .key,
+            price: .value.instance_type.price_cents_per_hour
+        }] |
+        sort_by(.price) |
+        .[].name
+    ')
+
+    if [[ -z "$gpu_names_str" ]]; then
+        die "No GPUs currently available. Use --wait to wait for availability."
+    fi
+
+    # Count GPUs
+    local count
+    count=$(echo "$gpu_names_str" | wc -l | tr -d ' ')
+
+    echo "" >&2
+    echo "Available GPUs (sorted by price):" >&2
+    echo "==================================" >&2
+
+    local i=1
+    while IFS= read -r name; do
+        local gpu_info
+        gpu_info=$(echo "$response" | jq -r --arg gpu "$name" '
+            .data[$gpu] |
+            "\(.instance_type.price_cents_per_hour)\t\(.instance_type.description)\t\(.regions_with_capacity_available | map(.name) | join(", "))"
+        ')
+        local price_cents description regions
+        IFS=$'\t' read -r price_cents description regions <<< "$gpu_info"
+        local price_hourly
+        price_hourly=$(echo "scale=2; $price_cents / 100" | bc)
+        printf "  %2d) %-25s \$%s/hr - %s\n" "$i" "$name" "$price_hourly" "$description" >&2
+        printf "      Regions: %s\n" "$regions" >&2
+        ((i++))
+    done <<< "$gpu_names_str"
+
+    echo "" >&2
+    local selection
+    selection=$(prompt_selection "Select a GPU" "$count")
+
+    # Get the selected GPU by line number
+    echo "$gpu_names_str" | sed -n "${selection}p"
+}
+
+interactive_select_region() {
+    local gpu_type="$1"
+
+    local regions
+    regions=$(get_all_regions_for_gpu "$gpu_type")
+
+    if [[ -z "$regions" ]]; then
+        return 0
+    fi
+
+    # Count regions
+    local count
+    count=$(echo "$regions" | wc -l | tr -d ' ')
+
+    # If only one region, return it without prompting
+    if [[ "$count" -eq 1 ]]; then
+        echo "$regions"
+        return 0
+    fi
+
+    echo "" >&2
+    echo "Available regions for $gpu_type:" >&2
+    echo "=================================" >&2
+
+    local i=1
+    while IFS= read -r region; do
+        printf "  %2d) %s\n" "$i" "$region" >&2
+        ((i++))
+    done <<< "$regions"
+
+    echo "" >&2
+    local selection
+    selection=$(prompt_selection "Select a region" "$count")
+
+    # Get the selected region by line number
+    echo "$regions" | sed -n "${selection}p"
+}
+
+interactive_select_ssh_key() {
+    log_info "Fetching registered SSH keys..."
+    local registered_keys
+    registered_keys=$(get_ssh_keys)
+
+    if echo "$registered_keys" | jq -e '.error' &>/dev/null; then
+        die "API error: $(echo "$registered_keys" | jq -r '.error.message // .error')"
+    fi
+
+    # Get registered key names as newline-separated string
+    local registered_names
+    registered_names=$(echo "$registered_keys" | jq -r '.data[].name // empty')
+
+    # Scan local keys
+    local local_keys
+    local_keys=$(scan_local_ssh_keys)
+
+    # Use a temp file to build options (avoids subshell issues)
+    local tmpfile
+    tmpfile=$(mktemp)
+    trap "rm -f '$tmpfile'" RETURN
+
+    local display_num=1
+
+    echo "" >&2
+    echo "SSH Key Selection:" >&2
+    echo "==================" >&2
+
+    # Add registered keys
+    if [[ -n "$registered_names" ]]; then
+        while IFS= read -r name; do
+            if [[ -n "$name" ]]; then
+                printf "  %2d) %s [registered]\n" "$display_num" "$name" >&2
+                echo "registered:${name}:${name}" >> "$tmpfile"
+                ((display_num++))
+            fi
+        done <<< "$registered_names"
+    fi
+
+    # Add local keys not already registered
+    if [[ -n "$local_keys" ]]; then
+        while IFS= read -r key_path; do
+            if [[ -n "$key_path" ]]; then
+                local key_basename
+                key_basename=$(basename "$key_path" .pub)
+                # Check if this key is already registered
+                if [[ -n "$registered_names" ]] && echo "$registered_names" | grep -qx "$key_basename"; then
+                    continue
+                fi
+                printf "  %2d) %s [local - will be registered]\n" "$display_num" "$key_basename" >&2
+                echo "local:${key_basename}:${key_path}" >> "$tmpfile"
+                ((display_num++))
+            fi
+        done <<< "$local_keys"
+    fi
+
+    # Add generate new key option
+    printf "  %2d) Generate a new SSH key\n" "$display_num" >&2
+    echo "generate:generate:" >> "$tmpfile"
+
+    echo "" >&2
+    local count=$((display_num))
+    local selection
+    selection=$(prompt_selection "Select an SSH key" "$count")
+
+    # Get the selected option by line number
+    local selected_line
+    selected_line=$(sed -n "${selection}p" "$tmpfile")
+
+    local selected_type selected_name selected_value
+    IFS=':' read -r selected_type selected_name selected_value <<< "$selected_line"
+
+    case "$selected_type" in
+        registered)
+            echo "registered:$selected_name"
+            ;;
+        local)
+            echo "local:$selected_name:$selected_value"
+            ;;
+        generate)
+            local key_name="cloudkitchens-challenge"
+            echo -en "${YELLOW}[INPUT]${NC} Enter key name (default: $key_name): " >&2
+            read -r user_key_name
+            if [[ -n "$user_key_name" ]]; then
+                key_name="$user_key_name"
+            fi
+            local key_path
+            key_path=$(generate_ssh_key "$key_name")
+            echo "local:$key_name:${key_path}.pub"
+            ;;
+    esac
 }
 
 ensure_ssh_key() {
@@ -703,6 +952,7 @@ cleanup_all() {
     fi
 
     # Delete filesystems
+    local fs_delete_failures=0
     if [[ "$filesystem_count" -gt 0 ]]; then
         log_info "Deleting $filesystem_count filesystem(s)..."
 
@@ -717,6 +967,7 @@ cleanup_all() {
             result=$(delete_filesystem "$filesystem_id")
             if echo "$result" | jq -e '.error' &>/dev/null; then
                 log_error "Failed to delete $fs_name: $(echo "$result" | jq -r '.error.message // .error')"
+                ((fs_delete_failures++))
             else
                 log_success "Deleted $fs_name"
             fi
@@ -724,6 +975,12 @@ cleanup_all() {
     fi
 
     echo ""
+    if [[ "$fs_delete_failures" -gt 0 ]]; then
+        log_warn "Some filesystems could not be deleted via API."
+        log_warn "You may need to delete them manually via the Lambda Cloud console:"
+        log_warn "  https://cloud.lambdalabs.com/file-systems"
+        echo ""
+    fi
     log_success "Cleanup complete!"
 }
 
@@ -758,7 +1015,7 @@ OPTIONS:
     -n, --name NAME         Instance name (optional)
     -s, --filesystem NAME   Filesystem name (creates if doesn't exist)
     -w, --wait              Wait for GPU availability
-    -y, --yes               Auto-confirm all prompts (auto mode)
+    -y, --yes               Auto-confirm all prompts (auto mode, disables interactive)
     --poll-interval SECS    Seconds between availability checks (default: 60)
     --max-wait SECS         Maximum wait time in seconds (default: 86400)
     -h, --help              Show this help message
@@ -766,7 +1023,29 @@ OPTIONS:
 ENVIRONMENT:
     LAMBDA_API_KEY          Your Lambda Labs API key (or use --api-key-file)
 
+INTERACTIVE MODE:
+    When run in an interactive terminal without required options, the script
+    will guide you through GPU and SSH key selection:
+
+    ./provision-gpu.sh provision          # Interactive GPU + SSH key selection
+    ./provision-gpu.sh provision -g gpu   # Interactive SSH key selection only
+    ./provision-gpu.sh provision -k key   # Interactive GPU selection only
+    ./provision-gpu.sh cheapest           # Interactive SSH key selection
+
+    Interactive mode supports:
+    - Selecting from available GPUs (sorted by price)
+    - Selecting from registered Lambda Labs SSH keys
+    - Using local ~/.ssh/*.pub keys (auto-registered on use)
+    - Generating new SSH keys (default name: cloudkitchens-challenge)
+    - Selecting from available regions when multiple are available
+
+    Note: Interactive mode requires a terminal (stdin must be a tty).
+    When piped or in auto mode (-y), all required options must be provided.
+
 EXAMPLES:
+    # Interactive provisioning (terminal required)
+    ./provision-gpu.sh provision
+
     # List available GPUs (using env var)
     export LAMBDA_API_KEY="your-key"
     ./provision-gpu.sh list
@@ -792,7 +1071,7 @@ EXAMPLES:
     # Provision with filesystem (creates if doesn't exist)
     ./provision-gpu.sh provision -g gpu_1x_a100 -k my-key -s my-storage
 
-    # Auto-confirm all prompts
+    # Auto-confirm all prompts (non-interactive, all options required)
     ./provision-gpu.sh provision -g gpu_1x_a100 -k my-key -y
 
     # Terminate an instance
@@ -918,18 +1197,59 @@ main() {
             list_all_gpus
             ;;
         provision)
+            # Interactive GPU selection if not provided
             if [[ -z "$gpu_type" ]]; then
-                die "GPU type is required. Use -g or --gpu option."
+                if is_interactive && [[ "$AUTO_MODE" != "true" ]]; then
+                    gpu_type=$(interactive_select_gpu)
+                else
+                    die "GPU type is required. Use -g or --gpu option. (Interactive mode requires a terminal)"
+                fi
             fi
+
+            # Interactive region selection if not specified and multiple available
+            if [[ -z "$region" ]] && is_interactive && [[ "$AUTO_MODE" != "true" ]]; then
+                region=$(interactive_select_region "$gpu_type")
+            fi
+
+            # Interactive SSH key selection if not provided
             if [[ -z "$ssh_key_name" ]]; then
-                die "SSH key name is required. Use -k or --ssh-key option."
+                if is_interactive && [[ "$AUTO_MODE" != "true" ]]; then
+                    local ssh_selection
+                    ssh_selection=$(interactive_select_ssh_key)
+
+                    local ssh_type ssh_name ssh_path
+                    IFS=':' read -r ssh_type ssh_name ssh_path <<< "$ssh_selection"
+
+                    ssh_key_name="$ssh_name"
+                    if [[ "$ssh_type" == "local" ]]; then
+                        ssh_key_file="$ssh_path"
+                    fi
+                else
+                    die "SSH key name is required. Use -k or --ssh-key option. (Interactive mode requires a terminal)"
+                fi
             fi
+
             provision_gpu "$gpu_type" "$region" "$ssh_key_name" "$ssh_key_file" "$instance_name" "$filesystem_name" "$wait_for_avail"
             ;;
         cheapest)
+            # Interactive SSH key selection if not provided
             if [[ -z "$ssh_key_name" ]]; then
-                die "SSH key name is required. Use -k or --ssh-key option."
+                if is_interactive && [[ "$AUTO_MODE" != "true" ]]; then
+                    local ssh_selection
+                    ssh_selection=$(interactive_select_ssh_key)
+
+                    local ssh_type ssh_name ssh_path
+                    IFS=':' read -r ssh_type ssh_name ssh_path <<< "$ssh_selection"
+
+                    ssh_key_name="$ssh_name"
+                    if [[ "$ssh_type" == "local" ]]; then
+                        ssh_key_file="$ssh_path"
+                    fi
+                else
+                    die "SSH key name is required. Use -k or --ssh-key option. (Interactive mode requires a terminal)"
+                fi
             fi
+
             provision_cheapest "$ssh_key_name" "$ssh_key_file" "$instance_name" "$filesystem_name"
             ;;
         filesystems)

@@ -101,9 +101,45 @@ The filesystem will be created if it doesn't exist and mounted at `/lambda/nfs/m
 ./lambda/provision-gpu.sh terminate <instance-id>
 ```
 
+### Cleanup all resources
+
+Terminate all instances and delete all filesystems:
+
+```bash
+./lambda/provision-gpu.sh cleanup
+```
+
+### Interactive mode
+
+When run without required options, the script guides you through GPU and SSH key selection:
+
+```bash
+# Full interactive mode - prompts for GPU and SSH key
+./lambda/provision-gpu.sh provision
+
+# Prompts for SSH key only
+./lambda/provision-gpu.sh provision -g gpu_1x_a100
+
+# Prompts for GPU only
+./lambda/provision-gpu.sh provision -k my-ssh-key
+
+# Interactive SSH key selection for cheapest GPU
+./lambda/provision-gpu.sh cheapest
+```
+
+Interactive features:
+- **GPU selection**: Shows available GPUs sorted by price with regions
+- **SSH key selection**: Choose from:
+  - Keys already registered with Lambda Labs `[registered]`
+  - Local `~/.ssh/*.pub` keys `[local - will be registered]`
+  - Generate a new SSH key (default name: `cloudkitchens-challenge`)
+- **Region selection**: When multiple regions are available for a GPU
+
+Note: Interactive mode requires a terminal. When piped or in auto mode (`-y`), all required options must be provided.
+
 ### Auto-confirm mode
 
-Add `-y` to skip all confirmation prompts:
+Add `-y` to skip all confirmation prompts (disables interactive mode):
 
 ```bash
 ./lambda/provision-gpu.sh provision -g gpu_1x_a100 -k my-ssh-key -y
