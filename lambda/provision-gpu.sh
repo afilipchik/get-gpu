@@ -10,6 +10,7 @@
 # - Load SSH key from file
 # - Wait for availability
 # - Interactive or auto mode
+# - Run init script on provisioned instance
 #
 # API Documentation: https://cloud.lambdalabs.com/api/v1/docs
 #
@@ -704,6 +705,64 @@ wait_for_instance_ready() {
     done
 }
 
+run_init_script() {
+    local ip_address="$1"
+    local init_script="$2"
+    local ssh_key_file="${3:-}"
+
+    if [[ ! -f "$init_script" ]]; then
+        die "Init script not found: $init_script"
+    fi
+
+    log_info "Running init script on instance..."
+
+    # Build SSH options
+    local ssh_opts=(-o "StrictHostKeyChecking=no" -o "UserKnownHostsFile=/dev/null" -o "ConnectTimeout=30")
+
+    # Add identity file if provided
+    if [[ -n "$ssh_key_file" ]]; then
+        # Convert .pub to private key path if needed
+        local private_key="${ssh_key_file%.pub}"
+        if [[ -f "$private_key" ]]; then
+            ssh_opts+=(-i "$private_key")
+        fi
+    fi
+
+    # Wait a bit for SSH to be ready (instance might be active but SSH not yet listening)
+    log_info "Waiting for SSH to be ready..."
+    local ssh_ready=false
+    for i in {1..30}; do
+        if ssh "${ssh_opts[@]}" -o "BatchMode=yes" "ubuntu@${ip_address}" "echo ready" &>/dev/null; then
+            ssh_ready=true
+            break
+        fi
+        log_info "SSH not ready yet, attempt $i/30..."
+        sleep 10
+    done
+
+    if [[ "$ssh_ready" != "true" ]]; then
+        log_warn "Could not connect via SSH after 5 minutes. Init script not executed."
+        log_warn "You can manually run it with: ssh ubuntu@$ip_address < $init_script"
+        return 1
+    fi
+
+    # Copy and execute the init script
+    log_info "Copying init script to instance..."
+    scp "${ssh_opts[@]}" "$init_script" "ubuntu@${ip_address}:/tmp/init-script.sh"
+
+    log_info "Executing init script..."
+    ssh "${ssh_opts[@]}" "ubuntu@${ip_address}" "chmod +x /tmp/init-script.sh && /tmp/init-script.sh"
+
+    local exit_code=$?
+    if [[ $exit_code -eq 0 ]]; then
+        log_success "Init script completed successfully"
+    else
+        log_warn "Init script exited with code $exit_code"
+    fi
+
+    return $exit_code
+}
+
 provision_gpu() {
     local gpu_type="$1"
     local region="$2"
@@ -712,6 +771,7 @@ provision_gpu() {
     local instance_name="${5:-}"
     local filesystem_name="${6:-}"
     local wait_for_avail="${7:-false}"
+    local init_script="${8:-}"
 
     # Ensure SSH key exists
     ensure_ssh_key "$ssh_key_name" "$ssh_key_file"
@@ -769,6 +829,7 @@ provision_gpu() {
     echo "SSH Key: $ssh_key_name"
     [[ -n "$instance_name" ]] && echo "Instance Name: $instance_name"
     [[ -n "$filesystem_name" ]] && echo "Filesystem: $filesystem_name"
+    [[ -n "$init_script" ]] && echo "Init Script: $init_script"
     echo ""
     echo "Estimated Cost:"
     echo "  Hourly:  \$${price_hourly}"
@@ -809,6 +870,11 @@ provision_gpu() {
     local ip_address
     ip_address=$(echo "$instance_info" | jq -r '.data.ip // "pending"')
 
+    # Run init script if provided
+    if [[ -n "$init_script" ]] && [[ "$ip_address" != "pending" ]]; then
+        run_init_script "$ip_address" "$init_script" "$ssh_key_file"
+    fi
+
     echo ""
     echo "=========================================="
     echo "Instance Details"
@@ -828,6 +894,7 @@ provision_cheapest() {
     local ssh_key_file="${2:-}"
     local instance_name="${3:-}"
     local filesystem_name="${4:-}"
+    local init_script="${5:-}"
 
     log_info "Finding cheapest available GPU..."
 
@@ -852,7 +919,7 @@ provision_cheapest() {
         die "Cancelled by user"
     fi
 
-    provision_gpu "$gpu_type" "$region" "$ssh_key_name" "$ssh_key_file" "$instance_name" "$filesystem_name" "false"
+    provision_gpu "$gpu_type" "$region" "$ssh_key_name" "$ssh_key_file" "$instance_name" "$filesystem_name" "false" "$init_script"
 }
 
 cleanup_all() {
@@ -1014,6 +1081,7 @@ OPTIONS:
     -f, --ssh-key-file PATH Path to public SSH key file (for creating new key)
     -n, --name NAME         Instance name (optional)
     -s, --filesystem NAME   Filesystem name (creates if doesn't exist)
+    -i, --init-script PATH  Script to run on instance after provisioning
     -w, --wait              Wait for GPU availability
     -y, --yes               Auto-confirm all prompts (auto mode, disables interactive)
     --poll-interval SECS    Seconds between availability checks (default: 60)
@@ -1071,6 +1139,9 @@ EXAMPLES:
     # Provision with filesystem (creates if doesn't exist)
     ./provision-gpu.sh provision -g gpu_1x_a100 -k my-key -s my-storage
 
+    # Provision with init script (runs after instance is ready)
+    ./provision-gpu.sh provision -g gpu_1x_a100 -k my-key -i setup.sh
+
     # Auto-confirm all prompts (non-interactive, all options required)
     ./provision-gpu.sh provision -g gpu_1x_a100 -k my-key -y
 
@@ -1096,6 +1167,7 @@ main() {
     local ssh_key_file=""
     local instance_name=""
     local filesystem_name=""
+    local init_script=""
     local wait_for_avail="false"
     local command=""
 
@@ -1157,6 +1229,10 @@ main() {
                 ;;
             -s|--filesystem)
                 filesystem_name="$2"
+                shift 2
+                ;;
+            -i|--init-script)
+                init_script="$2"
                 shift 2
                 ;;
             -w|--wait)
@@ -1229,7 +1305,7 @@ main() {
                 fi
             fi
 
-            provision_gpu "$gpu_type" "$region" "$ssh_key_name" "$ssh_key_file" "$instance_name" "$filesystem_name" "$wait_for_avail"
+            provision_gpu "$gpu_type" "$region" "$ssh_key_name" "$ssh_key_file" "$instance_name" "$filesystem_name" "$wait_for_avail" "$init_script"
             ;;
         cheapest)
             # Interactive SSH key selection if not provided
@@ -1250,7 +1326,7 @@ main() {
                 fi
             fi
 
-            provision_cheapest "$ssh_key_name" "$ssh_key_file" "$instance_name" "$filesystem_name"
+            provision_cheapest "$ssh_key_name" "$ssh_key_file" "$instance_name" "$filesystem_name" "$init_script"
             ;;
         filesystems)
             log_info "Listing filesystems..."
