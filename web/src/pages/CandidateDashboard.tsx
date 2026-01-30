@@ -17,29 +17,12 @@ export default function CandidateDashboard({ user }: CandidateDashboardProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Track IDs of requests that were pending on the previous poll
-  const prevPendingIds = useRef<Set<string>>(new Set());
+  // Track VM statuses from previous poll to detect transitions to "active"
+  const prevVMStatuses = useRef<Map<string, string>>(new Map());
 
   const loadLaunchRequests = useCallback(async () => {
     try {
       const data = await fetchLaunchRequests();
-      // Check for queued→fulfilled transitions and fire browser notification
-      if (prevPendingIds.current.size > 0) {
-        for (const lr of data) {
-          if (lr.status === "fulfilled" && prevPendingIds.current.has(lr.id)) {
-            if (Notification.permission === "granted") {
-              new Notification("GPU Instance Ready", {
-                body: "Your GPU instance has been provisioned and is ready to use.",
-              });
-            }
-          }
-        }
-      }
-      // Update tracked pending IDs for next poll
-      const nowPending = new Set(
-        data.filter((lr) => lr.status === "queued" || lr.status === "provisioning").map((lr) => lr.id),
-      );
-      prevPendingIds.current = nowPending;
       setLaunchRequests(data);
     } catch {
       // ignore
@@ -49,6 +32,18 @@ export default function CandidateDashboard({ user }: CandidateDashboardProps) {
   const loadVMs = useCallback(async () => {
     try {
       const data = await fetchVMs();
+      // Notify when a VM transitions to "active" (booted and running)
+      if (prevVMStatuses.current.size > 0 && Notification.permission === "granted") {
+        for (const vm of data) {
+          const prev = prevVMStatuses.current.get(vm.instanceId);
+          if (vm.status === "active" && prev && prev !== "active") {
+            new Notification("GPU Instance Ready", {
+              body: "Your GPU instance is now running and ready to use.",
+            });
+          }
+        }
+      }
+      prevVMStatuses.current = new Map(data.map((vm) => [vm.instanceId, vm.status]));
       setVMs(data);
       setError(null);
     } catch (err: any) {
@@ -90,12 +85,14 @@ export default function CandidateDashboard({ user }: CandidateDashboardProps) {
     (lr) => lr.status === "queued" || lr.status === "provisioning",
   );
 
-  // Request notification permission when user has a pending request
+  const bootingVMs = activeVMs.filter((vm) => vm.status === "launching" || vm.status === "booting");
+
+  // Request notification permission when user has a pending request or a booting VM
   useEffect(() => {
-    if (pendingRequests.length > 0 && "Notification" in window && Notification.permission === "default") {
+    if ((pendingRequests.length > 0 || bootingVMs.length > 0) && "Notification" in window && Notification.permission === "default") {
       Notification.requestPermission();
     }
-  }, [pendingRequests.length]);
+  }, [pendingRequests.length, bootingVMs.length]);
 
   const burnCentsPerHour = activeVMs.reduce((sum, vm) => sum + vm.priceCentsPerHour, 0);
   const remainingCents = quotaCents - user.spentCents;
