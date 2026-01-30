@@ -1,8 +1,8 @@
-import { useNavigate } from "react-router-dom";
+interface UnauthorizedPageProps {
+  onLogout: () => void;
+}
 
-export default function UnauthorizedPage() {
-  const navigate = useNavigate();
-
+export default function UnauthorizedPage({ onLogout }: UnauthorizedPageProps) {
   return (
     <div className="unauthorized-page">
       <h2>Access Denied</h2>
@@ -10,8 +10,8 @@ export default function UnauthorizedPage() {
         Your email is not on the approved candidate list. Please contact your interviewer to get
         access.
       </p>
-      <button className="btn btn-secondary" onClick={() => navigate("/login")}>
-        Back to sign in
+      <button className="btn btn-secondary" onClick={onLogout}>
+        Sign in with a different account
       </button>
     </div>
   );

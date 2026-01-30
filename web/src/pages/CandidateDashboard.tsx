@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from "react";
-import type { User, VMRecord, FilesystemRecord, GpuType } from "../types";
-import { fetchVMs, fetchFilesystems, fetchGpuTypes } from "../api";
+import type { User, VMRecord, FilesystemRecord, GpuType, LaunchRequest } from "../types";
+import { fetchVMs, fetchFilesystems, fetchGpuTypes, fetchLaunchRequests } from "../api";
 import LaunchForm from "../components/LaunchForm";
+import LaunchRequestCard from "../components/LaunchRequestCard";
 import VMCard from "../components/VMCard";
 
 interface CandidateDashboardProps {
@@ -10,10 +11,21 @@ interface CandidateDashboardProps {
 
 export default function CandidateDashboard({ user }: CandidateDashboardProps) {
   const [vms, setVMs] = useState<VMRecord[]>([]);
+  const [launchRequests, setLaunchRequests] = useState<LaunchRequest[]>([]);
   const [filesystems, setFilesystems] = useState<FilesystemRecord[]>([]);
   const [gpuTypes, setGpuTypes] = useState<GpuType[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const loadLaunchRequests = useCallback(async () => {
+    try {
+      const data = await fetchLaunchRequests();
+      setLaunchRequests(data);
+    } catch {
+      // ignore
+    }
+  }, []);
+
   const loadVMs = useCallback(async () => {
     try {
       const data = await fetchVMs();
@@ -35,13 +47,18 @@ export default function CandidateDashboard({ user }: CandidateDashboardProps) {
     }
   }, []);
 
-  useEffect(() => {
+  const loadAll = useCallback(() => {
     loadVMs();
+    loadLaunchRequests();
+  }, [loadVMs, loadLaunchRequests]);
+
+  useEffect(() => {
+    loadAll();
     loadFilesystems();
     fetchGpuTypes().then(setGpuTypes).catch(() => {});
-    const interval = setInterval(loadVMs, 15000);
+    const interval = setInterval(loadAll, 15000);
     return () => clearInterval(interval);
-  }, [loadVMs, loadFilesystems]);
+  }, [loadAll, loadFilesystems]);
 
   const quotaCents = user.quotaDollars * 100;
   const pct = quotaCents > 0 ? Math.min((user.spentCents / quotaCents) * 100, 100) : 0;
@@ -49,6 +66,9 @@ export default function CandidateDashboard({ user }: CandidateDashboardProps) {
 
   const activeVMs = vms.filter((vm) => !vm.terminatedAt);
   const terminatedVMs = vms.filter((vm) => vm.terminatedAt);
+  const pendingRequests = launchRequests.filter(
+    (lr) => lr.status === "queued" || lr.status === "provisioning",
+  );
 
   const burnCentsPerHour = activeVMs.reduce((sum, vm) => sum + vm.priceCentsPerHour, 0);
   const remainingCents = quotaCents - user.spentCents;
@@ -87,9 +107,18 @@ export default function CandidateDashboard({ user }: CandidateDashboardProps) {
         </div>
       </div>
 
-      {/* Launch form or GPU pricing panel */}
-      {activeVMs.length === 0 ? (
-        <LaunchForm onLaunched={loadVMs} />
+      {/* Launch form, pending request, or GPU pricing panel */}
+      {pendingRequests.length > 0 ? (
+        <div>
+          <div className="section-header">
+            <h2>Pending Launch Request</h2>
+          </div>
+          {pendingRequests.map((lr) => (
+            <LaunchRequestCard key={lr.id} request={lr} gpuTypes={gpuTypes} onChanged={loadAll} />
+          ))}
+        </div>
+      ) : activeVMs.length === 0 ? (
+        <LaunchForm onLaunched={loadAll} />
       ) : (
         <div className="card">
           <h2>Available GPUs</h2>

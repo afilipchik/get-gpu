@@ -61,6 +61,16 @@
   to = "/.netlify/functions/setup-script"
   status = 200
 
+[[redirects]]
+  from = "/api/launch-requests/cancel"
+  to = "/.netlify/functions/launch-request-cancel"
+  status = 200
+
+[[redirects]]
+  from = "/api/launch-requests"
+  to = "/.netlify/functions/launch-requests"
+  status = 200
+
 # SPA fallback
 [[redirects]]
   from = "/*"

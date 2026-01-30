@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from "react";
-import type { User, VMRecord, Candidate, AdminSettings, FilesystemRecord } from "../types";
-import { fetchVMs, fetchCandidates, fetchSettings, updateSettings, fetchFilesystems } from "../api";
+import type { User, VMRecord, Candidate, AdminSettings, FilesystemRecord, LaunchRequest, GpuType } from "../types";
+import { fetchVMs, fetchCandidates, fetchSettings, updateSettings, fetchFilesystems, deleteFilesystem, fetchLaunchRequests, fetchGpuTypes } from "../api";
 import VMCard from "../components/VMCard";
+import LaunchRequestCard from "../components/LaunchRequestCard";
 import AllowlistTable from "../components/AllowlistTable";
 import AddCandidateForm from "../components/AddCandidateForm";
 import LaunchForm from "../components/LaunchForm";
@@ -216,12 +217,15 @@ function SettingsTab() {
 }
 
 export default function AdminDashboard({ user }: AdminDashboardProps) {
-  const [tab, setTab] = useState<"candidates" | "vms" | "launch" | "filesystems" | "settings">("candidates");
+  const [tab, setTab] = useState<"candidates" | "vms" | "queue" | "launch" | "filesystems" | "settings">("candidates");
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [vms, setVMs] = useState<VMRecord[]>([]);
+  const [launchRequests, setLaunchRequests] = useState<LaunchRequest[]>([]);
+  const [gpuTypes, setGpuTypes] = useState<GpuType[]>([]);
   const [filesystems, setFilesystems] = useState<FilesystemRecord[]>([]);
   const [loadingCandidates, setLoadingCandidates] = useState(true);
   const [loadingVMs, setLoadingVMs] = useState(true);
+  const [loadingLaunchRequests, setLoadingLaunchRequests] = useState(true);
   const [loadingFilesystems, setLoadingFilesystems] = useState(true);
 
   const loadCandidates = useCallback(async () => {
@@ -246,6 +250,17 @@ export default function AdminDashboard({ user }: AdminDashboardProps) {
     }
   }, []);
 
+  const loadLaunchRequests = useCallback(async () => {
+    try {
+      const data = await fetchLaunchRequests();
+      setLaunchRequests(data);
+    } catch {
+      // ignore
+    } finally {
+      setLoadingLaunchRequests(false);
+    }
+  }, []);
+
   const loadFilesystems = useCallback(async () => {
     try {
       const data = await fetchFilesystems();
@@ -260,13 +275,18 @@ export default function AdminDashboard({ user }: AdminDashboardProps) {
   useEffect(() => {
     loadCandidates();
     loadVMs();
+    loadLaunchRequests();
     loadFilesystems();
-    const interval = setInterval(loadVMs, 15000);
+    fetchGpuTypes().then(setGpuTypes).catch(() => {});
+    const interval = setInterval(() => { loadVMs(); loadLaunchRequests(); }, 15000);
     return () => clearInterval(interval);
-  }, [loadCandidates, loadVMs, loadFilesystems]);
+  }, [loadCandidates, loadVMs, loadLaunchRequests, loadFilesystems]);
 
   const activeVMs = vms.filter((vm) => !vm.terminatedAt);
   const terminatedVMs = vms.filter((vm) => vm.terminatedAt);
+  const queuedRequests = launchRequests.filter(
+    (lr) => lr.status === "queued" || lr.status === "provisioning",
+  );
 
   const totalSpentCents = candidates.reduce((sum, c) => sum + c.spentCents, 0);
   const totalQuotaCents = candidates.reduce((sum, c) => sum + c.quotaDollars * 100, 0);
@@ -293,6 +313,12 @@ export default function AdminDashboard({ user }: AdminDashboardProps) {
             <div style={{ color: "var(--text-muted)", fontSize: 12 }}>Active / Total VMs</div>
             <div style={{ fontSize: 24, fontWeight: 600 }}>{activeVMs.length} / {vms.length}</div>
           </div>
+          {queuedRequests.length > 0 && (
+            <div>
+              <div style={{ color: "var(--text-muted)", fontSize: 12 }}>Queued Requests</div>
+              <div style={{ fontSize: 24, fontWeight: 600 }}>{queuedRequests.length}</div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -308,6 +334,12 @@ export default function AdminDashboard({ user }: AdminDashboardProps) {
           onClick={() => setTab("vms")}
         >
           All VMs ({activeVMs.length} active)
+        </button>
+        <button
+          className={`tab ${tab === "queue" ? "active" : ""}`}
+          onClick={() => setTab("queue")}
+        >
+          Queue ({queuedRequests.length} waiting)
         </button>
         <button
           className={`tab ${tab === "launch" ? "active" : ""}`}
@@ -368,9 +400,52 @@ export default function AdminDashboard({ user }: AdminDashboardProps) {
         </div>
       )}
 
+      {tab === "queue" && (
+        <div>
+          {loadingLaunchRequests ? (
+            <p className="loading">Loading launch requests...</p>
+          ) : launchRequests.length === 0 ? (
+            <p className="empty-state">No launch requests.</p>
+          ) : (
+            <>
+              {queuedRequests.length > 0 && (
+                <>
+                  <div className="section-header">
+                    <h2>Waiting ({queuedRequests.length})</h2>
+                  </div>
+                  {queuedRequests.map((lr) => (
+                    <LaunchRequestCard key={lr.id} request={lr} gpuTypes={gpuTypes} onChanged={loadLaunchRequests} showEmail />
+                  ))}
+                </>
+              )}
+              {launchRequests.filter((lr) => lr.status === "fulfilled").length > 0 && (
+                <>
+                  <div className="section-header" style={{ marginTop: queuedRequests.length > 0 ? 24 : 0 }}>
+                    <h2>Fulfilled ({launchRequests.filter((lr) => lr.status === "fulfilled").length})</h2>
+                  </div>
+                  {launchRequests.filter((lr) => lr.status === "fulfilled").map((lr) => (
+                    <LaunchRequestCard key={lr.id} request={lr} gpuTypes={gpuTypes} onChanged={loadLaunchRequests} showEmail />
+                  ))}
+                </>
+              )}
+              {launchRequests.filter((lr) => lr.status === "cancelled" || lr.status === "failed").length > 0 && (
+                <>
+                  <div className="section-header" style={{ marginTop: 24 }}>
+                    <h2>Cancelled / Failed ({launchRequests.filter((lr) => lr.status === "cancelled" || lr.status === "failed").length})</h2>
+                  </div>
+                  {launchRequests.filter((lr) => lr.status === "cancelled" || lr.status === "failed").map((lr) => (
+                    <LaunchRequestCard key={lr.id} request={lr} gpuTypes={gpuTypes} onChanged={loadLaunchRequests} showEmail />
+                  ))}
+                </>
+              )}
+            </>
+          )}
+        </div>
+      )}
+
       {tab === "launch" && (
         <div>
-          <LaunchForm onLaunched={() => { loadVMs(); setTab("vms"); }} />
+          <LaunchForm onLaunched={() => { loadVMs(); loadLaunchRequests(); setTab("vms"); }} />
         </div>
       )}
 
@@ -389,6 +464,7 @@ export default function AdminDashboard({ user }: AdminDashboardProps) {
                   <th>In Use</th>
                   <th>Size</th>
                   <th>Created</th>
+                  <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -403,6 +479,25 @@ export default function AdminDashboard({ user }: AdminDashboardProps) {
                     </td>
                     <td>{(fs.bytes_used / (1024 * 1024 * 1024)).toFixed(2)} GB</td>
                     <td>{new Date(fs.created).toLocaleDateString()}</td>
+                    <td>
+                      <button
+                        className="btn btn-danger"
+                        style={{ padding: "4px 10px", fontSize: 12 }}
+                        disabled={fs.is_in_use}
+                        title={fs.is_in_use ? "Cannot delete while in use" : "Delete filesystem"}
+                        onClick={async () => {
+                          if (!confirm(`Delete filesystem "${fs.name}"? This cannot be undone.`)) return;
+                          try {
+                            await deleteFilesystem(fs.id);
+                            loadFilesystems();
+                          } catch (err: any) {
+                            alert(`Failed to delete: ${err.message}`);
+                          }
+                        }}
+                      >
+                        Delete
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>

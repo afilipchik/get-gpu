@@ -6,6 +6,10 @@ export interface CandidateRecord {
   spentCents: number;
   addedAt: string;
   addedBy: string;
+  /** When set, only VMs launched at or after this ISO timestamp count toward spending. */
+  spentResetAt?: string;
+  /** When set, the account is deactivated. Resources are terminated and login is blocked. */
+  deactivatedAt?: string;
 }
 
 export interface VMRecord {
@@ -55,6 +59,23 @@ export interface LambdaInstance {
 
 export interface LambdaApiError {
   error: { message: string };
+}
+
+export interface LaunchRequest {
+  id: string;
+  candidateEmail: string;
+  instanceTypes: string[];
+  regions: string[];
+  sshPublicKey: string;
+  attachFilesystem: boolean;
+  status: "queued" | "provisioning" | "fulfilled" | "cancelled" | "failed";
+  createdAt: string;
+  fulfilledAt: string | null;
+  fulfilledInstanceId: string | null;
+  failureReason: string | null;
+  cancelledAt: string | null;
+  attempts: number;
+  lastAttemptAt: string | null;
 }
 
 export interface AdminSettings {

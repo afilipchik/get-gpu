@@ -1,4 +1,4 @@
-import type { User, GpuType, VMRecord, Candidate, AdminSettings, FilesystemRecord } from "./types";
+import type { User, GpuType, VMRecord, Candidate, AdminSettings, FilesystemRecord, LaunchRequest } from "./types";
 
 let _authToken: string | null = null;
 
@@ -52,6 +52,11 @@ export const restartVM = (instanceId: string) =>
 // Filesystems
 export const fetchFilesystems = () => request<FilesystemRecord[]>("/api/filesystems");
 
+export const deleteFilesystem = (id: string) =>
+  request<{ ok: boolean }>(`/api/admin/filesystems?id=${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
+
 // Admin
 export const fetchCandidates = () => request<Candidate[]>("/api/admin/candidates");
 
@@ -83,3 +88,23 @@ export const updateSettings = (settings: AdminSettings & { testConnection?: bool
 
 export const fetchSetupScript = () =>
   request<{ setupScript: string }>("/api/settings/setup-script");
+
+// Launch Requests
+export const fetchLaunchRequests = () => request<LaunchRequest[]>("/api/launch-requests");
+
+export const createLaunchRequest = (params: {
+  instanceTypes: string[];
+  regions: string[];
+  sshPublicKey: string;
+  attachFilesystem?: boolean;
+}) =>
+  request<LaunchRequest>("/api/launch-requests", {
+    method: "POST",
+    body: JSON.stringify(params),
+  });
+
+export const cancelLaunchRequest = (id: string) =>
+  request<LaunchRequest>("/api/launch-requests/cancel", {
+    method: "POST",
+    body: JSON.stringify({ id }),
+  });

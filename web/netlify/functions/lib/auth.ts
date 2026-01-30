@@ -97,6 +97,11 @@ export async function authenticate(request: Request): Promise<AuthenticatedUser 
     return null;
   }
 
+  if (candidate.deactivatedAt) {
+    console.log("[auth] Candidate account is deactivated:", email);
+    return null;
+  }
+
   return { email, name, candidate };
 }
 
