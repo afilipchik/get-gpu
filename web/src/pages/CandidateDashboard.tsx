@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import type { User, VMRecord, FilesystemRecord, GpuType, LaunchRequest } from "../types";
 import { fetchVMs, fetchFilesystems, fetchGpuTypes, fetchLaunchRequests } from "../api";
 import LaunchForm from "../components/LaunchForm";
@@ -17,9 +17,29 @@ export default function CandidateDashboard({ user }: CandidateDashboardProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Track IDs of requests that were pending on the previous poll
+  const prevPendingIds = useRef<Set<string>>(new Set());
+
   const loadLaunchRequests = useCallback(async () => {
     try {
       const data = await fetchLaunchRequests();
+      // Check for queued→fulfilled transitions and fire browser notification
+      if (prevPendingIds.current.size > 0) {
+        for (const lr of data) {
+          if (lr.status === "fulfilled" && prevPendingIds.current.has(lr.id)) {
+            if (Notification.permission === "granted") {
+              new Notification("GPU Instance Ready", {
+                body: "Your GPU instance has been provisioned and is ready to use.",
+              });
+            }
+          }
+        }
+      }
+      // Update tracked pending IDs for next poll
+      const nowPending = new Set(
+        data.filter((lr) => lr.status === "queued" || lr.status === "provisioning").map((lr) => lr.id),
+      );
+      prevPendingIds.current = nowPending;
       setLaunchRequests(data);
     } catch {
       // ignore
@@ -69,6 +89,13 @@ export default function CandidateDashboard({ user }: CandidateDashboardProps) {
   const pendingRequests = launchRequests.filter(
     (lr) => lr.status === "queued" || lr.status === "provisioning",
   );
+
+  // Request notification permission when user has a pending request
+  useEffect(() => {
+    if (pendingRequests.length > 0 && "Notification" in window && Notification.permission === "default") {
+      Notification.requestPermission();
+    }
+  }, [pendingRequests.length]);
 
   const burnCentsPerHour = activeVMs.reduce((sum, vm) => sum + vm.priceCentsPerHour, 0);
   const remainingCents = quotaCents - user.spentCents;
