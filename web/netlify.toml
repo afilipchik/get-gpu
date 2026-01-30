@@ -1,0 +1,68 @@
+[build]
+  command = "npm run build"
+  publish = "dist"
+  functions = "netlify/functions"
+
+[build.environment]
+  # Auth0 domain, client ID, and audience are public values by design —
+  # they must be embedded in the frontend bundle for the Auth0 SDK to work.
+  SECRETS_SCAN_OMIT_KEYS = "AUTH0_AUDIENCE,AUTH0_CLIENT_ID,AUTH0_DOMAIN"
+
+[functions]
+  node_bundler = "esbuild"
+
+[[redirects]]
+  from = "/api/auth/me"
+  to = "/.netlify/functions/auth-me"
+  status = 200
+
+[[redirects]]
+  from = "/api/gpu-types"
+  to = "/.netlify/functions/gpu-types"
+  status = 200
+
+[[redirects]]
+  from = "/api/vms/launch"
+  to = "/.netlify/functions/vm-launch"
+  status = 200
+
+[[redirects]]
+  from = "/api/vms/terminate"
+  to = "/.netlify/functions/vm-terminate"
+  status = 200
+
+[[redirects]]
+  from = "/api/vms/restart"
+  to = "/.netlify/functions/vm-restart"
+  status = 200
+
+[[redirects]]
+  from = "/api/vms"
+  to = "/.netlify/functions/vm-list"
+  status = 200
+
+[[redirects]]
+  from = "/api/admin/candidates"
+  to = "/.netlify/functions/admin-candidates"
+  status = 200
+
+[[redirects]]
+  from = "/api/admin/quota"
+  to = "/.netlify/functions/admin-set-quota"
+  status = 200
+
+[[redirects]]
+  from = "/api/admin/settings"
+  to = "/.netlify/functions/admin-settings"
+  status = 200
+
+[[redirects]]
+  from = "/api/settings/setup-script"
+  to = "/.netlify/functions/setup-script"
+  status = 200
+
+# SPA fallback
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200

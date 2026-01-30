@@ -1,0 +1,63 @@
+export interface CandidateRecord {
+  email: string;
+  name: string;
+  role: "candidate" | "admin";
+  quotaDollars: number;
+  spentCents: number;
+  addedAt: string;
+  addedBy: string;
+}
+
+export interface VMRecord {
+  instanceId: string;
+  candidateEmail: string;
+  instanceType: string;
+  region: string;
+  priceCentsPerHour: number;
+  launchedAt: string;
+  status: string;
+  ipAddress: string | null;
+  jupyterUrl: string | null;
+  sshKeyName: string;
+  terminatedAt: string | null;
+  terminationReason: string | null;
+  lastCheckedAt: string;
+  accruedCents: number;
+}
+
+export interface SshKeyRecord {
+  keyName: string;
+  candidateEmail: string;
+  publicKey: string;
+  registeredAt: string;
+}
+
+// Lambda Labs API response types
+export interface LambdaInstanceType {
+  instance_type: {
+    name: string;
+    price_cents_per_hour: number;
+    description: string;
+  };
+  regions_with_capacity_available: Array<{ name: string; description: string }>;
+}
+
+export interface LambdaInstance {
+  id: string;
+  name: string | null;
+  status: string;
+  ip: string | null;
+  jupyter_url: string | null;
+  jupyter_token: string | null;
+  instance_type: { name: string };
+  region: { name: string };
+}
+
+export interface LambdaApiError {
+  error: { message: string };
+}
+
+export interface AdminSettings {
+  lambdaApiKey?: string;
+  setupScript?: string;
+}

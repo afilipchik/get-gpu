@@ -1,6 +1,6 @@
 # get-gpu
 
-A CLI tool for provisioning GPU instances from Lambda Labs.
+CLI and web dashboard for provisioning GPU instances from Lambda Labs.
 
 ## Features
 
@@ -160,6 +160,66 @@ Add `-y` to skip all confirmation prompts (disables interactive mode):
 | `-y, --yes` | Auto-confirm all prompts |
 | `--poll-interval SECS` | Seconds between availability checks (default: 60) |
 | `--max-wait SECS` | Maximum wait time in seconds (default: 86400) |
+
+## Web Dashboard
+
+A self-service web UI for launching, restarting, and terminating GPU instances. Deployed on Netlify with Auth0 authentication.
+
+### Features
+
+- **Candidate dashboard** — launch GPU instances, view active/terminated VMs, track spend against a quota budget, attach persistent filesystems
+- **Admin dashboard** — manage allowlisted candidates and quotas, view all VMs across users, configure Lambda API key and setup scripts, view filesystems
+- **Instance management** — launch, restart, and terminate instances with confirmation prompts
+- **SSH key persistence** — public key is saved in the browser so you don't re-enter it between launches
+- **Live cost tracking** — per-minute accrued cost updates in real time
+
+### Tech Stack
+
+- React 18 + TypeScript + Vite (frontend)
+- Netlify Functions (backend API)
+- Netlify Blobs (data store)
+- Auth0 (authentication)
+- Lambda Labs API (GPU provisioning)
+
+### Local Development
+
+```bash
+cd web
+npm install
+npm run dev
+```
+
+For the full backend (Netlify Functions + Blobs), use the Netlify CLI:
+
+```bash
+npx netlify dev
+```
+
+### Environment Variables
+
+| Variable | Description |
+|---|---|
+| `LAMBDA_API_KEY` | Lambda Labs API key (can also be set via admin UI) |
+| `AUTH0_DOMAIN` | Auth0 tenant domain |
+| `AUTH0_CLIENT_ID` | Auth0 SPA client ID |
+| `AUTH0_AUDIENCE` | Auth0 API audience |
+
+### API Endpoints
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/api/auth/me` | Current user profile |
+| GET | `/api/gpu-types` | Available GPU types with pricing |
+| GET | `/api/vms` | List VMs for the authenticated user |
+| POST | `/api/vms/launch` | Launch a new instance |
+| POST | `/api/vms/restart` | Restart an active instance |
+| POST | `/api/vms/terminate` | Terminate an active instance |
+| GET | `/api/filesystems` | List persistent filesystems |
+| GET | `/api/admin/candidates` | List allowlisted candidates (admin) |
+| POST | `/api/admin/candidates` | Add a candidate (admin) |
+| DELETE | `/api/admin/candidates` | Remove a candidate (admin) |
+| POST | `/api/admin/quota` | Set candidate quota (admin) |
+| GET/PUT | `/api/admin/settings` | Read/update admin settings |
 
 ## License
 

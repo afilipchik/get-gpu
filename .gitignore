@@ -1,2 +1,20 @@
 # Claude
 .claude/
+
+# Local Netlify folder
+.netlify
+
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Deno
+deno.lock
+
+# Environment variables
+.env
+
+# macOS
+.DS_Store

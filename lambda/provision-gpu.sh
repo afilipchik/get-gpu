@@ -338,7 +338,7 @@ generate_ssh_key() {
     fi
 
     log_info "Generating new SSH key at $key_path..."
-    ssh-keygen -t ed25519 -f "$key_path" -N "" -C "$key_name"
+    ssh-keygen -t ed25519 -f "$key_path" -N "" -C "$key_name" >/dev/null 2>&1
 
     if [[ -f "$key_path" ]]; then
         log_success "SSH key generated: $key_path"
