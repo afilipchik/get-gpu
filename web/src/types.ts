@@ -38,6 +38,7 @@ export interface Candidate {
   spentCents: number;
   addedAt: string;
   addedBy: string;
+  deactivatedAt?: string;
 }
 
 export interface FilesystemRecord {
@@ -51,6 +52,22 @@ export interface FilesystemRecord {
 
 export interface ApiError {
   error: string;
+}
+
+export interface LaunchRequest {
+  id: string;
+  candidateEmail: string;
+  instanceTypes: string[];
+  regions: string[];
+  attachFilesystem: boolean;
+  status: "queued" | "provisioning" | "fulfilled" | "cancelled" | "failed";
+  createdAt: string;
+  fulfilledAt: string | null;
+  fulfilledInstanceId: string | null;
+  failureReason: string | null;
+  cancelledAt: string | null;
+  attempts: number;
+  lastAttemptAt: string | null;
 }
 
 export interface AdminSettings {

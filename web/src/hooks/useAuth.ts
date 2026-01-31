@@ -15,6 +15,8 @@ export function useAuth() {
   const [user, setUser] = useState<User | null>(null);
   const [profileLoading, setProfileLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // True when Auth0 login succeeded but backend rejected (email not on allowlist)
+  const [unauthorized, setUnauthorized] = useState(false);
 
   const loadProfile = useCallback(async () => {
     if (!isAuthenticated) return;
@@ -25,9 +27,12 @@ export function useAuth() {
       const profile = await fetchProfile();
       setUser(profile);
       setError(null);
+      setUnauthorized(false);
     } catch (err: any) {
       setUser(null);
       setError(err.message);
+      // Auth0 session is valid but backend says no — user isn't on the allowlist
+      setUnauthorized(true);
     } finally {
       setProfileLoading(false);
     }
@@ -54,5 +59,5 @@ export function useAuth() {
 
   const loading = auth0Loading || profileLoading;
 
-  return { user, loading, error, login, logout, refresh: loadProfile };
+  return { user, loading, error, unauthorized, login, logout, refresh: loadProfile };
 }

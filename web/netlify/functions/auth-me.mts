@@ -8,7 +8,7 @@ export default async (request: Request, _context: Context) => {
   if (authError) return authError;
 
   const { candidate } = user!;
-  const spentCents = await computeSpentCents(candidate.email);
+  const spentCents = await computeSpentCents(candidate.email, candidate.spentResetAt);
 
   return json({
     email: candidate.email,

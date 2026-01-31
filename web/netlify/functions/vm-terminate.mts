@@ -58,7 +58,7 @@ export default async (request: Request, _context: Context) => {
     // Update candidate's spentCents
     const fresh = await getCandidate(vm.candidateEmail);
     if (fresh) {
-      fresh.spentCents = await computeSpentCents(vm.candidateEmail);
+      fresh.spentCents = await computeSpentCents(vm.candidateEmail, fresh.spentResetAt);
       await putCandidate(fresh);
     }
 
@@ -78,7 +78,8 @@ export default async (request: Request, _context: Context) => {
 
     return json(vm);
   } catch (err: any) {
-    return json({ error: `Terminate failed: ${err.message}` }, 500);
+    console.error("Terminate failed:", err.message);
+    return json({ error: "Terminate failed. Please try again." }, 500);
   }
 };
 

@@ -58,7 +58,8 @@ export default async (request: Request, _context: Context) => {
       try {
         await testApiKey(keyToTest);
       } catch (err: any) {
-        return json({ error: `API key test failed: ${err.message}` }, 400);
+        console.error("API key test failed:", err.message);
+        return json({ error: "API key test failed. Verify the key is correct." }, 400);
       }
     }
 

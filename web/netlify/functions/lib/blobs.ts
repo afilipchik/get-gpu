@@ -1,5 +1,5 @@
 import { getStore } from "@netlify/blobs";
-import type { CandidateRecord, VMRecord, SshKeyRecord, AdminSettings } from "./types.js";
+import type { CandidateRecord, VMRecord, SshKeyRecord, AdminSettings, LaunchRequest } from "./types.js";
 
 function store(name: string) {
   return getStore({ name, consistency: "strong" });
@@ -64,12 +64,17 @@ export async function listVMsByEmail(email: string): Promise<VMRecord[]> {
 }
 
 /** Compute real-time total spent cents for a candidate across all their VMs.
- *  Always calculates from timestamps to avoid stale stored values. */
-export async function computeSpentCents(email: string): Promise<number> {
+ *  Always calculates from timestamps to avoid stale stored values.
+ *  If resetAfter is provided, only VMs launched at or after that time are counted
+ *  (used to zero out spending when a candidate is re-added). */
+export async function computeSpentCents(email: string, resetAfter?: string): Promise<number> {
   const vms = await listVMsByEmail(email);
+  const cutoff = resetAfter ? new Date(resetAfter).getTime() : 0;
   let total = 0;
   for (const vm of vms) {
-    const start = new Date(vm.launchedAt).getTime();
+    const launchTime = new Date(vm.launchedAt).getTime();
+    if (launchTime < cutoff) continue;
+    const start = launchTime;
     const end = vm.terminatedAt ? new Date(vm.terminatedAt).getTime() : Date.now();
     const minutesElapsed = Math.ceil((end - start) / (1000 * 60));
     total += Math.ceil(minutesElapsed * (vm.priceCentsPerHour / 60));
@@ -93,6 +98,45 @@ export async function putSshKey(record: SshKeyRecord): Promise<void> {
 export async function deleteSshKeyRecord(email: string, keyName: string): Promise<void> {
   const s = store("ssh-keys");
   await s.delete(`${email}:${keyName}`);
+}
+
+// --- Launch Requests ---
+
+export async function getLaunchRequest(id: string): Promise<LaunchRequest | null> {
+  const s = store("launch-requests");
+  const data = await s.get(id, { type: "json" });
+  return data as LaunchRequest | null;
+}
+
+export async function putLaunchRequest(record: LaunchRequest): Promise<void> {
+  const s = store("launch-requests");
+  await s.setJSON(record.id, record);
+}
+
+export async function deleteLaunchRequest(id: string): Promise<void> {
+  const s = store("launch-requests");
+  await s.delete(id);
+}
+
+export async function listLaunchRequests(): Promise<LaunchRequest[]> {
+  const s = store("launch-requests");
+  const { blobs } = await s.list();
+  const results: LaunchRequest[] = [];
+  for (const blob of blobs) {
+    const data = await s.get(blob.key, { type: "json" });
+    if (data) results.push(data as LaunchRequest);
+  }
+  return results;
+}
+
+export async function listLaunchRequestsByEmail(email: string): Promise<LaunchRequest[]> {
+  const all = await listLaunchRequests();
+  return all.filter((lr) => lr.candidateEmail === email);
+}
+
+export async function listQueuedLaunchRequests(): Promise<LaunchRequest[]> {
+  const all = await listLaunchRequests();
+  return all.filter((lr) => lr.status === "queued");
 }
 
 // --- Settings ---

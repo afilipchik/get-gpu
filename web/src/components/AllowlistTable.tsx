@@ -12,8 +12,8 @@ export default function AllowlistTable({ candidates, onChanged }: AllowlistTable
   const [quotaValue, setQuotaValue] = useState("");
   const [error, setError] = useState<string | null>(null);
 
-  const handleDelete = async (email: string) => {
-    if (!confirm(`Remove ${email} from the allowlist?`)) return;
+  const handleDeactivate = async (email: string) => {
+    if (!confirm(`Deactivate ${email}? Their VMs will be terminated.`)) return;
     setError(null);
     try {
       await removeCandidate(email);
@@ -58,12 +58,20 @@ export default function AllowlistTable({ candidates, onChanged }: AllowlistTable
           </thead>
           <tbody>
             {candidates.map((c) => (
-              <tr key={c.email}>
+              <tr key={c.email} style={c.deactivatedAt ? { opacity: 0.5 } : undefined}>
                 <td>{c.email}</td>
                 <td>{c.name}</td>
-                <td>{c.role}</td>
                 <td>
-                  {editingQuota === c.email ? (
+                  {c.deactivatedAt ? (
+                    <span style={{ color: "var(--text-muted)" }}>deactivated</span>
+                  ) : (
+                    c.role
+                  )}
+                </td>
+                <td>
+                  {c.deactivatedAt ? (
+                    <span style={{ color: "var(--text-muted)" }}>—</span>
+                  ) : editingQuota === c.email ? (
                     <span style={{ display: "flex", gap: 4, alignItems: "center" }}>
                       $
                       <input
@@ -96,13 +104,15 @@ export default function AllowlistTable({ candidates, onChanged }: AllowlistTable
                 <td>${(c.spentCents / 100).toFixed(2)}</td>
                 <td>{new Date(c.addedAt).toLocaleDateString()}</td>
                 <td>
-                  <button
-                    className="btn btn-danger"
-                    style={{ padding: "4px 10px", fontSize: 12 }}
-                    onClick={() => handleDelete(c.email)}
-                  >
-                    Remove
-                  </button>
+                  {!c.deactivatedAt && (
+                    <button
+                      className="btn btn-danger"
+                      style={{ padding: "4px 10px", fontSize: 12 }}
+                      onClick={() => handleDeactivate(c.email)}
+                    >
+                      Deactivate
+                    </button>
+                  )}
                 </td>
               </tr>
             ))}

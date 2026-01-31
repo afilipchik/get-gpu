@@ -1,6 +1,6 @@
 import type { Context } from "@netlify/functions";
 import { authenticate, requireAuth, json } from "./lib/auth.js";
-import { getCandidate, putVM, getSshKey, putSshKey, getSettings, computeSpentCents, listVMsByEmail } from "./lib/blobs.js";
+import { getCandidate, putVM, getSshKey, putSshKey, getSettings, computeSpentCents, listVMsByEmail, listLaunchRequestsByEmail } from "./lib/blobs.js";
 import { launchInstance, getInstanceTypes, addSshKey, listSshKeys, listFilesystems, createFilesystem } from "./lib/lambda-api.js";
 import type { VMRecord } from "./lib/types.js";
 
@@ -43,8 +43,16 @@ export default async (request: Request, _context: Context) => {
       return json({ error: "You already have an active instance. Terminate it before launching a new one." }, 400);
     }
 
+    const pendingRequests = await listLaunchRequestsByEmail(candidate.email);
+    const pendingRequest = pendingRequests.find(
+      (lr) => lr.status === "queued" || lr.status === "provisioning",
+    );
+    if (pendingRequest) {
+      return json({ error: "You have a pending launch request. Cancel it before launching directly." }, 400);
+    }
+
     const quotaCents = candidate.quotaDollars * 100;
-    const realTimeSpent = await computeSpentCents(candidate.email);
+    const realTimeSpent = await computeSpentCents(candidate.email, candidate.spentResetAt);
     const remaining = quotaCents - realTimeSpent;
     if (remaining < priceCentsPerHour) {
       return json({ error: "Insufficient quota to launch this instance" }, 403);
@@ -139,7 +147,8 @@ export default async (request: Request, _context: Context) => {
 
     return json(vmRecord, 201);
   } catch (err: any) {
-    return json({ error: `Launch failed: ${err.message}` }, 500);
+    console.error("Launch failed:", err.message);
+    return json({ error: "Launch failed. Please try again." }, 500);
   }
 };
 
