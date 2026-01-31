@@ -48,7 +48,7 @@ export async function listInstances(): Promise<LambdaInstance[]> {
 }
 
 export async function getInstance(id: string): Promise<LambdaInstance> {
-  const res = await request(`/instances/${id}`);
+  const res = await request(`/instances/${encodeURIComponent(id)}`);
   await assertOk(res);
   const body = await res.json();
   return (body as { data: LambdaInstance }).data;
@@ -64,7 +64,7 @@ export async function listFilesystems(): Promise<
 }
 
 export async function deleteFilesystem(id: string): Promise<void> {
-  const res = await request(`/file-systems/${id}`, { method: "DELETE" });
+  const res = await request(`/file-systems/${encodeURIComponent(id)}`, { method: "DELETE" });
   await assertOk(res);
 }
 
@@ -133,7 +133,7 @@ export async function addSshKey(name: string, publicKey: string): Promise<{ id: 
 }
 
 export async function deleteSshKey(id: string): Promise<void> {
-  const res = await request(`/ssh-keys/${id}`, { method: "DELETE" });
+  const res = await request(`/ssh-keys/${encodeURIComponent(id)}`, { method: "DELETE" });
   await assertOk(res);
 }
 

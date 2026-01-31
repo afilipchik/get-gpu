@@ -6,65 +6,10 @@ import LaunchRequestCard from "../components/LaunchRequestCard";
 import AllowlistTable from "../components/AllowlistTable";
 import AddCandidateForm from "../components/AddCandidateForm";
 import LaunchForm from "../components/LaunchForm";
+import BashHighlight from "../components/BashHighlight";
 
 interface AdminDashboardProps {
   user: User;
-}
-
-const BASH_KEYWORDS = /\b(if|then|else|elif|fi|for|while|do|done|case|esac|in|function|return|exit|export|source|local|readonly|declare|set|unset|shift|trap|eval|exec|cd|echo|printf|read|test)\b/g;
-
-function highlightBash(code: string): string {
-  const esc = (s: string) =>
-    s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-
-  const tokens: { start: number; end: number; html: string }[] = [];
-
-  // Comments
-  for (const m of code.matchAll(/#[^\n]*/g)) {
-    tokens.push({ start: m.index!, end: m.index! + m[0].length, html: `<span style="color:#6a9955">${esc(m[0])}</span>` });
-  }
-
-  // Double-quoted strings
-  for (const m of code.matchAll(/"(?:[^"\\]|\\.)*"/g)) {
-    tokens.push({ start: m.index!, end: m.index! + m[0].length, html: `<span style="color:#ce9178">${esc(m[0])}</span>` });
-  }
-
-  // Single-quoted strings
-  for (const m of code.matchAll(/'[^']*'/g)) {
-    tokens.push({ start: m.index!, end: m.index! + m[0].length, html: `<span style="color:#ce9178">${esc(m[0])}</span>` });
-  }
-
-  // Variables $VAR, ${VAR}
-  for (const m of code.matchAll(/\$\{?[A-Za-z_]\w*\}?/g)) {
-    tokens.push({ start: m.index!, end: m.index! + m[0].length, html: `<span style="color:#9cdcfe">${esc(m[0])}</span>` });
-  }
-
-  // Sort and remove overlapping tokens
-  tokens.sort((a, b) => a.start - b.start);
-  const merged: typeof tokens = [];
-  for (const t of tokens) {
-    if (merged.length > 0 && t.start < merged[merged.length - 1].end) continue;
-    merged.push(t);
-  }
-
-  // Build result
-  let result = "";
-  let pos = 0;
-  for (const t of merged) {
-    if (t.start > pos) {
-      result += applyKeywords(esc(code.slice(pos, t.start)));
-    }
-    result += t.html;
-    pos = t.end;
-  }
-  if (pos < code.length) {
-    result += applyKeywords(esc(code.slice(pos)));
-  }
-  return result;
-}
-
-function applyKeywords(escaped: string): string {
-  return escaped.replace(BASH_KEYWORDS, '<span style="color:#c586c0">$1</span>');
 }
 
 function SettingsTab() {
@@ -163,7 +108,7 @@ function SettingsTab() {
               background: "transparent",
             }}
           >
-            <code dangerouslySetInnerHTML={{ __html: highlightBash(setupScript) + "\n" }} />
+            <BashHighlight code={setupScript} />
           </pre>
           <textarea
             value={setupScript}

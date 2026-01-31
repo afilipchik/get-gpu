@@ -78,7 +78,8 @@ export default async (request: Request, _context: Context) => {
 
     return json(vm);
   } catch (err: any) {
-    return json({ error: `Terminate failed: ${err.message}` }, 500);
+    console.error("Terminate failed:", err.message);
+    return json({ error: "Terminate failed. Please try again." }, 500);
   }
 };
 

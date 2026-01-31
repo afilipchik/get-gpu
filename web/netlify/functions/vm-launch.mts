@@ -147,7 +147,8 @@ export default async (request: Request, _context: Context) => {
 
     return json(vmRecord, 201);
   } catch (err: any) {
-    return json({ error: `Launch failed: ${err.message}` }, 500);
+    console.error("Launch failed:", err.message);
+    return json({ error: "Launch failed. Please try again." }, 500);
   }
 };
 

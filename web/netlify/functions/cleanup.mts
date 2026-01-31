@@ -9,8 +9,6 @@ import {
 } from "./lib/lambda-api.js";
 import type { VMRecord } from "./lib/types.js";
 
-const MAX_VM_HOURS = parseInt(process.env.MAX_VM_HOURS ?? "24", 10);
-
 export default async () => {
   console.log("Cleanup: starting run");
 
@@ -65,16 +63,6 @@ export default async () => {
       const delta = vm.accruedCents - prevAccrued;
       if (delta > 0) {
         candidateUpdates.set(vm.candidateEmail, (candidateUpdates.get(vm.candidateEmail) ?? 0) + delta);
-      }
-
-      const hoursElapsed = minutesElapsed / 60;
-      if (hoursElapsed >= MAX_VM_HOURS) {
-        console.log(`Cleanup: VM ${vm.instanceId} exceeded ${MAX_VM_HOURS}h, terminating`);
-        toTerminate.push(vm.instanceId);
-        vm.terminatedAt = new Date().toISOString();
-        vm.terminationReason = "max_hours_exceeded";
-        vm.status = "terminated";
-        terminatedKeys.set(vm.candidateEmail, vm.sshKeyName);
       }
 
       await putVM(vm);

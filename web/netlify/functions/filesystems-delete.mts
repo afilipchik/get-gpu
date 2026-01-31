@@ -23,7 +23,8 @@ export default async (request: Request, _context: Context) => {
     await deleteFilesystem(id);
     return json({ ok: true });
   } catch (err: any) {
-    return json({ error: `Failed to delete filesystem: ${err.message}` }, 500);
+    console.error("Failed to delete filesystem:", err.message);
+    return json({ error: "Failed to delete filesystem. Please try again." }, 500);
   }
 };
 

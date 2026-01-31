@@ -27,7 +27,6 @@ function getJWKS() {
 export async function authenticate(request: Request): Promise<AuthenticatedUser | null> {
   const authHeader = request.headers.get("authorization");
   if (!authHeader?.startsWith("Bearer ")) {
-    console.log("[auth] No Bearer token in Authorization header");
     return null;
   }
 
@@ -35,19 +34,17 @@ export async function authenticate(request: Request): Promise<AuthenticatedUser 
 
   const audience = process.env.AUTH0_AUDIENCE;
   if (!audience) {
-    console.log("[auth] AUTH0_AUDIENCE env var not set");
+    console.error("[auth] AUTH0_AUDIENCE env var not set");
     return null;
   }
 
   let issuer: string;
   try {
     issuer = getIssuer();
-  } catch (err: any) {
-    console.log("[auth] Failed to get issuer:", err.message);
+  } catch {
+    console.error("[auth] AUTH0_ISSUER_BASE_URL not configured");
     return null;
   }
-
-  console.log("[auth] Verifying JWT with issuer:", issuer, "audience:", audience);
 
   let payload: Record<string, unknown>;
   try {
@@ -56,12 +53,9 @@ export async function authenticate(request: Request): Promise<AuthenticatedUser 
       audience,
     });
     payload = result.payload as Record<string, unknown>;
-  } catch (err: any) {
-    console.log("[auth] JWT verification failed:", err.message);
+  } catch {
     return null;
   }
-
-  console.log("[auth] JWT payload claims:", Object.keys(payload).join(", "));
 
   const email = (payload.email as string) ??
     (payload["https://get-gpu.netlify.app/email"] as string);
@@ -70,16 +64,12 @@ export async function authenticate(request: Request): Promise<AuthenticatedUser 
     email;
 
   if (!email) {
-    console.log("[auth] No email found in JWT payload");
     return null;
   }
-
-  console.log("[auth] Authenticated email:", email);
 
   let candidate = await getCandidate(email);
 
   if (!candidate && isAdminEmail(email)) {
-    console.log("[auth] Auto-bootstrapping admin for:", email);
     candidate = {
       email,
       name,
@@ -93,12 +83,10 @@ export async function authenticate(request: Request): Promise<AuthenticatedUser 
   }
 
   if (!candidate) {
-    console.log("[auth] No candidate record found for:", email);
     return null;
   }
 
   if (candidate.deactivatedAt) {
-    console.log("[auth] Candidate account is deactivated:", email);
     return null;
   }
 
@@ -128,7 +116,6 @@ export function requireAdmin(user: AuthenticatedUser): Response | null {
 export function isAdminEmail(email: string): boolean {
   const raw = process.env.ADMIN_EMAILS ?? "";
   const admins = raw.split(",").map((e) => e.trim().toLowerCase()).filter(Boolean);
-  console.log("[auth] ADMIN_EMAILS raw:", JSON.stringify(raw), "parsed:", admins, "checking:", email.toLowerCase());
   return admins.includes(email.toLowerCase());
 }
 

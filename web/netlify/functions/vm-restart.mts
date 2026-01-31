@@ -49,7 +49,8 @@ export default async (request: Request, _context: Context) => {
 
     return json(vm);
   } catch (err: any) {
-    return json({ error: `Restart failed: ${err.message}` }, 500);
+    console.error("Restart failed:", err.message);
+    return json({ error: "Restart failed. Please try again." }, 500);
   }
 };
 
