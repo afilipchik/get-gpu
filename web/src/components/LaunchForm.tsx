@@ -8,6 +8,7 @@ interface LaunchFormProps {
 
 export default function LaunchForm({ onLaunched }: LaunchFormProps) {
   const [gpuTypes, setGpuTypes] = useState<GpuType[]>([]);
+  const [allRegions, setAllRegions] = useState<string[]>([]);
   const [selectedTypes, setSelectedTypes] = useState<Set<string>>(new Set());
   const [selectedRegions, setSelectedRegions] = useState<Set<string>>(new Set());
   const [sshPublicKey, setSshPublicKey] = useState(() => localStorage.getItem("sshPublicKey") ?? "");
@@ -18,8 +19,9 @@ export default function LaunchForm({ onLaunched }: LaunchFormProps) {
 
   useEffect(() => {
     fetchGpuTypes()
-      .then((types) => {
-        setGpuTypes(types);
+      .then((data) => {
+        setGpuTypes(data.types);
+        setAllRegions(data.allRegions);
         setLoadingTypes(false);
       })
       .catch((err) => {
@@ -27,17 +29,6 @@ export default function LaunchForm({ onLaunched }: LaunchFormProps) {
         setLoadingTypes(false);
       });
   }, []);
-
-  // All known regions across all GPU types
-  const allRegions = useMemo(() => {
-    const regionSet = new Set<string>();
-    for (const t of gpuTypes) {
-      for (const r of t.regions) {
-        regionSet.add(r);
-      }
-    }
-    return Array.from(regionSet).sort();
-  }, [gpuTypes]);
 
   // For each region, which of the selected GPU types have capacity there?
   const regionCapacity = useMemo(() => {

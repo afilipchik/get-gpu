@@ -70,7 +70,7 @@ export default function CandidateDashboard({ user }: CandidateDashboardProps) {
   useEffect(() => {
     loadAll();
     loadFilesystems();
-    fetchGpuTypes().then(setGpuTypes).catch(() => {});
+    fetchGpuTypes().then((data) => setGpuTypes(data.types)).catch(() => {});
     const interval = setInterval(loadAll, 15000);
     return () => clearInterval(interval);
   }, [loadAll, loadFilesystems]);

@@ -26,7 +26,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 export const fetchProfile = () => request<User>("/api/auth/me");
 
 // GPU Types
-export const fetchGpuTypes = () => request<GpuType[]>("/api/gpu-types");
+export const fetchGpuTypes = () => request<{ types: GpuType[]; allRegions: string[] }>("/api/gpu-types");
 
 // VMs
 export const fetchVMs = () => request<VMRecord[]>("/api/vms");

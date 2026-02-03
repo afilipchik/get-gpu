@@ -222,7 +222,7 @@ export default function AdminDashboard({ user }: AdminDashboardProps) {
     loadVMs();
     loadLaunchRequests();
     loadFilesystems();
-    fetchGpuTypes().then(setGpuTypes).catch(() => {});
+    fetchGpuTypes().then((data) => setGpuTypes(data.types)).catch(() => {});
     const interval = setInterval(() => { loadVMs(); loadLaunchRequests(); }, 15000);
     return () => clearInterval(interval);
   }, [loadCandidates, loadVMs, loadLaunchRequests, loadFilesystems]);
