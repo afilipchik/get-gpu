@@ -209,7 +209,7 @@ export default function CandidateDashboard({ user }: CandidateDashboardProps) {
                 <span style={{ color: "var(--text-muted)", marginLeft: 12 }}>{fs.region}</span>
               </div>
               <div style={{ display: "flex", gap: 16, fontSize: 13, color: "var(--text-muted)" }}>
-                <span>{(fs.bytes_used / (1024 * 1024 * 1024)).toFixed(2)} GB</span>
+                <span>{(fs.bytes_used / (1024 * 1024 * 1024)).toFixed(2)} GB (~${(fs.bytes_used / (1024 * 1024 * 1024) * 0.20).toFixed(2)}/mo)</span>
                 <span className={`badge ${fs.is_in_use ? "badge-active" : "badge-idle"}`}>
                   {fs.is_in_use ? "In Use" : "Idle"}
                 </span>

@@ -408,6 +408,7 @@ export default function AdminDashboard({ user }: AdminDashboardProps) {
                   <th>Region</th>
                   <th>In Use</th>
                   <th>Size</th>
+                  <th>~Cost/mo</th>
                   <th>Created</th>
                   <th>Actions</th>
                 </tr>
@@ -423,6 +424,7 @@ export default function AdminDashboard({ user }: AdminDashboardProps) {
                       </span>
                     </td>
                     <td>{(fs.bytes_used / (1024 * 1024 * 1024)).toFixed(2)} GB</td>
+                    <td>${(fs.bytes_used / (1024 * 1024 * 1024) * 0.20).toFixed(2)}</td>
                     <td>{new Date(fs.created).toLocaleDateString()}</td>
                     <td>
                       <button
