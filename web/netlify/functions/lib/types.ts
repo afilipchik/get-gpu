@@ -81,4 +81,30 @@ export interface LaunchRequest {
 export interface AdminSettings {
   lambdaApiKey?: string;
   setupScript?: string;
+  defaultFilesystemNames?: string[];
+  gcsServiceAccountJson?: string;
+}
+
+export interface SeedingJob {
+  id: string;
+  createdAt: string;
+  createdBy: string;
+  status: "queued" | "provisioning" | "seeding" | "completed" | "failed";
+  sourceType: "gcs";
+  sourceUrl: string;
+  targetRegions: string[];
+  filesystemName: string;
+  instanceType: string;
+  startedAt?: string;
+  completedAt?: string;
+  error?: string;
+  regionProgress: {
+    [region: string]: {
+      status: "queued" | "provisioning" | "downloading" | "completed" | "failed";
+      loaderInstanceId?: string;
+      startedAt?: string;
+      completedAt?: string;
+      error?: string;
+    };
+  };
 }

@@ -1,5 +1,5 @@
 import { getStore } from "@netlify/blobs";
-import type { CandidateRecord, VMRecord, SshKeyRecord, AdminSettings, LaunchRequest } from "./types.js";
+import type { CandidateRecord, VMRecord, SshKeyRecord, AdminSettings, LaunchRequest, SeedingJob } from "./types.js";
 
 function store(name: string) {
   return getStore({ name, consistency: "strong" });
@@ -150,4 +150,28 @@ export async function getSettings(): Promise<AdminSettings | null> {
 export async function putSettings(settings: AdminSettings): Promise<void> {
   const s = store("settings");
   await s.setJSON("admin", settings);
+}
+
+// --- Seeding Jobs ---
+
+export async function getSeedingJob(id: string): Promise<SeedingJob | null> {
+  const s = store("seeding-jobs");
+  const data = await s.get(id, { type: "json" });
+  return data as SeedingJob | null;
+}
+
+export async function putSeedingJob(job: SeedingJob): Promise<void> {
+  const s = store("seeding-jobs");
+  await s.setJSON(job.id, job);
+}
+
+export async function listSeedingJobs(): Promise<SeedingJob[]> {
+  const s = store("seeding-jobs");
+  const { blobs } = await s.list();
+  const results: SeedingJob[] = [];
+  for (const blob of blobs) {
+    const data = await s.get(blob.key, { type: "json" });
+    if (data) results.push(data as SeedingJob);
+  }
+  return results;
 }

@@ -97,8 +97,10 @@ export default async (request: Request, _context: Context) => {
     userDataScript = script.startsWith("#!") ? script : `#!/bin/bash\n${script}`;
   }
 
-  // Filesystem: find or create if requested (1 per candidate per region)
-  let fileSystemNames: string[] | undefined;
+  // Filesystem: attach user's personal filesystem + default shared filesystems
+  let fileSystemNames: string[] = [];
+
+  // 1. User's personal filesystem (if requested)
   if (body.attachFilesystem) {
     const sanitized = candidate.email.replace(/[^a-zA-Z0-9]/g, "-");
     const fsName = `fs-${sanitized}-${body.region}`.replace(/--+/g, "-").slice(0, 60);
@@ -107,10 +109,22 @@ export default async (request: Request, _context: Context) => {
     const match = existing.find((f) => f.name === fsName && f.region.name === body.region);
 
     if (match) {
-      fileSystemNames = [match.name];
+      fileSystemNames.push(match.name);
     } else {
       const created = await createFilesystem(fsName, body.region);
-      fileSystemNames = [created.name];
+      fileSystemNames.push(created.name);
+    }
+  }
+
+  // 2. Default shared filesystems (auto-attached from admin settings)
+  if (settings?.defaultFilesystemNames) {
+    const existing = await listFilesystems();
+    for (const fsName of settings.defaultFilesystemNames) {
+      // Check if filesystem exists in this region
+      const match = existing.find((f) => f.name === fsName && f.region.name === body.region);
+      if (match && !fileSystemNames.includes(match.name)) {
+        fileSystemNames.push(match.name);
+      }
     }
   }
 
