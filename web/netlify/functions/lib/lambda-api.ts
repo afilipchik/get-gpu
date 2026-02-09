@@ -57,7 +57,7 @@ export async function getInstance(id: string): Promise<LambdaInstance> {
 export async function listFilesystems(): Promise<
   Array<{ id: string; name: string; region: { name: string }; is_in_use: boolean; bytes_used: number; created: string }>
 > {
-  const res = await request("/filesystems");
+  const res = await request("/file-systems");
   await assertOk(res);
   const body = await res.json();
   return (body as { data: Array<{ id: string; name: string; region: { name: string }; is_in_use: boolean; bytes_used: number; created: string }> }).data;
