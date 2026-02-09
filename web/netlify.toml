@@ -82,18 +82,8 @@
   status = 200
 
 [[redirects]]
-  from = "/api/admin/seed-filesystem/status"
-  to = "/.netlify/functions/admin-seed-status"
-  status = 200
-
-[[redirects]]
-  from = "/api/admin/seed-filesystem/jobs"
-  to = "/.netlify/functions/admin-seed-jobs"
-  status = 200
-
-[[redirects]]
-  from = "/api/admin/seed-filesystem"
-  to = "/.netlify/functions/admin-seed-filesystem"
+  from = "/api/seed-complete"
+  to = "/.netlify/functions/seed-complete"
   status = 200
 
 # SPA fallback

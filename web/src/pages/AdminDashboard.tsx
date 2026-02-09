@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import type { User, VMRecord, Candidate, AdminSettings, FilesystemRecord, LaunchRequest, GpuType } from "../types";
+import type { User, VMRecord, Candidate, AdminSettings, DefaultFilesystem, FilesystemRecord, LaunchRequest, GpuType } from "../types";
 import { fetchVMs, fetchCandidates, fetchSettings, updateSettings, fetchFilesystems, deleteFilesystem, fetchLaunchRequests, fetchGpuTypes } from "../api";
 import VMCard from "../components/VMCard";
 import LaunchRequestCard from "../components/LaunchRequestCard";
@@ -7,17 +7,23 @@ import AllowlistTable from "../components/AllowlistTable";
 import AddCandidateForm from "../components/AddCandidateForm";
 import LaunchForm from "../components/LaunchForm";
 import BashHighlight from "../components/BashHighlight";
-import AdminSeedFilesystem from "./AdminSeedFilesystem";
 
 interface AdminDashboardProps {
   user: User;
 }
 
+const emptyFilesystem = (): DefaultFilesystem => ({
+  name: "",
+  sourceType: "gcs",
+  sourceUrl: "",
+  credentials: "",
+});
+
 function SettingsTab() {
   const [apiKey, setApiKey] = useState("");
   const [setupScript, setSetupScript] = useState("");
-  const [gcsServiceAccountJson, setGcsServiceAccountJson] = useState("");
-  const [defaultFilesystemNames, setDefaultFilesystemNames] = useState("");
+  const [defaultFilesystems, setDefaultFilesystems] = useState<DefaultFilesystem[]>([]);
+  const [seedCompleteSecret, setSeedCompleteSecret] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
@@ -28,34 +34,36 @@ function SettingsTab() {
       .then((s) => {
         setApiKey(s.lambdaApiKey ?? "");
         setSetupScript(s.setupScript ?? "");
-        setGcsServiceAccountJson(s.gcsServiceAccountJson ?? "");
-        setDefaultFilesystemNames((s.defaultFilesystemNames ?? []).join(", "));
+        setDefaultFilesystems(s.defaultFilesystems ?? []);
+        setSeedCompleteSecret(s.seedCompleteSecret ?? "");
       })
-      .catch(() => {
-        // No settings yet
-      })
+      .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
+
+  const updateFs = (index: number, patch: Partial<DefaultFilesystem>) => {
+    setDefaultFilesystems((prev) =>
+      prev.map((fs, i) => (i === index ? { ...fs, ...patch } : fs)),
+    );
+  };
+
+  const removeFs = (index: number) => {
+    setDefaultFilesystems((prev) => prev.filter((_, i) => i !== index));
+  };
 
   const handleSave = async () => {
     setSaving(true);
     setMessage(null);
     try {
-      const filesystemNamesArray = defaultFilesystemNames
-        .split(",")
-        .map((s) => s.trim())
-        .filter((s) => s.length > 0);
-
       const result = await updateSettings({
         lambdaApiKey: apiKey,
         setupScript,
-        gcsServiceAccountJson: gcsServiceAccountJson || undefined,
-        defaultFilesystemNames: filesystemNamesArray.length > 0 ? filesystemNamesArray : undefined,
+        defaultFilesystems: defaultFilesystems.length > 0 ? defaultFilesystems : undefined,
       });
       setApiKey(result.lambdaApiKey ?? "");
       setSetupScript(result.setupScript ?? "");
-      setGcsServiceAccountJson(result.gcsServiceAccountJson ?? "");
-      setDefaultFilesystemNames((result.defaultFilesystemNames ?? []).join(", "));
+      setDefaultFilesystems(result.defaultFilesystems ?? []);
+      setSeedCompleteSecret(result.seedCompleteSecret ?? "");
       setMessage({ type: "success", text: "Settings saved." });
     } catch (err: any) {
       setMessage({ type: "error", text: err.message });
@@ -68,16 +76,10 @@ function SettingsTab() {
     setTesting(true);
     setMessage(null);
     try {
-      const filesystemNamesArray = defaultFilesystemNames
-        .split(",")
-        .map((s) => s.trim())
-        .filter((s) => s.length > 0);
-
       await updateSettings({
         lambdaApiKey: apiKey,
         setupScript,
-        gcsServiceAccountJson: gcsServiceAccountJson || undefined,
-        defaultFilesystemNames: filesystemNamesArray.length > 0 ? filesystemNamesArray : undefined,
+        defaultFilesystems: defaultFilesystems.length > 0 ? defaultFilesystems : undefined,
         testConnection: true,
       });
       setMessage({ type: "success", text: "Connection successful! Settings saved." });
@@ -160,46 +162,129 @@ function SettingsTab() {
           />
         </div>
         <p style={{ color: "var(--text-muted)", fontSize: 12, marginTop: 4 }}>
-          Shown to candidates after they launch an instance. Leave empty to hide the setup command section.
+          Runs on every VM after launch. Leave empty to skip.
         </p>
       </div>
 
+      {/* Default Filesystems */}
       <div style={{ marginBottom: 16 }}>
         <label style={{ display: "block", marginBottom: 4, fontWeight: 500 }}>
           Default Filesystems
         </label>
-        <input
-          type="text"
-          value={defaultFilesystemNames}
-          onChange={(e) => setDefaultFilesystemNames(e.target.value)}
-          placeholder="e.g. shared-wayo-data, shared-imagenet"
-          style={{ width: "100%", boxSizing: "border-box" }}
-        />
-        <p style={{ color: "var(--text-muted)", fontSize: 12, marginTop: 4 }}>
-          Comma-separated list of filesystem names to auto-attach to all user VM launches (if available in the region).
+        <p style={{ color: "var(--text-muted)", fontSize: 12, marginBottom: 8 }}>
+          Shared filesystems auto-attached (read-only) to every VM. If a filesystem doesn't exist in the target region, it will be created and seeded automatically.
         </p>
+
+        {defaultFilesystems.map((fs, i) => (
+          <div
+            key={i}
+            style={{
+              border: "1px solid var(--border)",
+              borderRadius: 8,
+              padding: 12,
+              marginBottom: 8,
+              background: "var(--bg-secondary, #f9f9f9)",
+            }}
+          >
+            <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+              <div style={{ flex: 1 }}>
+                <label style={{ fontSize: 12, color: "var(--text-muted)" }}>Name</label>
+                <input
+                  type="text"
+                  value={fs.name}
+                  onChange={(e) => updateFs(i, { name: e.target.value })}
+                  placeholder="e.g. shared-wayo-data"
+                  style={{ width: "100%", boxSizing: "border-box" }}
+                />
+              </div>
+              <div style={{ width: 120 }}>
+                <label style={{ fontSize: 12, color: "var(--text-muted)" }}>Source Type</label>
+                <select
+                  value={fs.sourceType}
+                  onChange={(e) => updateFs(i, { sourceType: e.target.value as "gcs" | "r2" })}
+                  style={{ width: "100%", boxSizing: "border-box" }}
+                >
+                  <option value="gcs">GCS</option>
+                  <option value="r2">Cloudflare R2</option>
+                </select>
+              </div>
+              <div style={{ alignSelf: "flex-end" }}>
+                <button
+                  onClick={() => removeFs(i)}
+                  className="btn btn-danger"
+                  style={{ padding: "6px 10px", fontSize: 12 }}
+                >
+                  Remove
+                </button>
+              </div>
+            </div>
+            <div style={{ marginBottom: 8 }}>
+              <label style={{ fontSize: 12, color: "var(--text-muted)" }}>Source URL</label>
+              <input
+                type="text"
+                value={fs.sourceUrl}
+                onChange={(e) => updateFs(i, { sourceUrl: e.target.value })}
+                placeholder={fs.sourceType === "gcs" ? "gs://bucket/path" : "s3://bucket/path"}
+                style={{ width: "100%", boxSizing: "border-box" }}
+              />
+            </div>
+            <div>
+              <label style={{ fontSize: 12, color: "var(--text-muted)" }}>
+                Credentials {fs.credentials === "***" ? "(saved)" : ""}
+              </label>
+              <textarea
+                value={fs.credentials === "***" ? "" : fs.credentials}
+                onChange={(e) => updateFs(i, { credentials: e.target.value })}
+                placeholder={
+                  fs.credentials === "***"
+                    ? "Credentials saved. Paste new value to replace."
+                    : fs.sourceType === "gcs"
+                      ? '{"type": "service_account", ...}'
+                      : '{"accountId": "...", "accessKeyId": "...", "secretAccessKey": "..."}'
+                }
+                rows={3}
+                style={{
+                  width: "100%",
+                  boxSizing: "border-box",
+                  fontFamily: "monospace",
+                  fontSize: 12,
+                }}
+              />
+            </div>
+          </div>
+        ))}
+
+        <button
+          onClick={() => setDefaultFilesystems((prev) => [...prev, emptyFilesystem()])}
+          className="secondary"
+          style={{ fontSize: 13 }}
+        >
+          + Add Filesystem
+        </button>
       </div>
 
-      <div style={{ marginBottom: 16 }}>
-        <label style={{ display: "block", marginBottom: 4, fontWeight: 500 }}>
-          GCS Service Account JSON
-        </label>
-        <textarea
-          value={gcsServiceAccountJson}
-          onChange={(e) => setGcsServiceAccountJson(e.target.value)}
-          placeholder='{"type": "service_account", "project_id": "...", ...}'
-          rows={8}
-          style={{
-            width: "100%",
-            boxSizing: "border-box",
-            fontFamily: "monospace",
-            fontSize: 13,
-          }}
-        />
-        <p style={{ color: "var(--text-muted)", fontSize: 12, marginTop: 4 }}>
-          Google Cloud Service Account JSON credentials for seeding filesystems from GCS. Required for filesystem seeding operations.
-        </p>
-      </div>
+      {seedCompleteSecret && (
+        <div style={{ marginBottom: 16 }}>
+          <label style={{ display: "block", marginBottom: 4, fontWeight: 500 }}>
+            Seed Complete Secret
+          </label>
+          <input
+            type="text"
+            value={seedCompleteSecret}
+            readOnly
+            style={{
+              width: "100%",
+              boxSizing: "border-box",
+              fontFamily: "monospace",
+              fontSize: 12,
+              background: "var(--bg-secondary, #f5f5f5)",
+            }}
+          />
+          <p style={{ color: "var(--text-muted)", fontSize: 12, marginTop: 4 }}>
+            Auto-generated. Used by loader VMs to report seeding completion.
+          </p>
+        </div>
+      )}
 
       {message && (
         <div
@@ -227,7 +312,7 @@ function SettingsTab() {
 }
 
 export default function AdminDashboard({ user }: AdminDashboardProps) {
-  const [tab, setTab] = useState<"candidates" | "vms" | "queue" | "launch" | "filesystems" | "seed" | "settings">("candidates");
+  const [tab, setTab] = useState<"candidates" | "vms" | "queue" | "launch" | "filesystems" | "settings">("candidates");
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [vms, setVMs] = useState<VMRecord[]>([]);
   const [launchRequests, setLaunchRequests] = useState<LaunchRequest[]>([]);
@@ -362,12 +447,6 @@ export default function AdminDashboard({ user }: AdminDashboardProps) {
           onClick={() => setTab("filesystems")}
         >
           Filesystems ({filesystems.length})
-        </button>
-        <button
-          className={`tab ${tab === "seed" ? "active" : ""}`}
-          onClick={() => setTab("seed")}
-        >
-          Seed Filesystem
         </button>
         <button
           className={`tab ${tab === "settings" ? "active" : ""}`}
@@ -523,8 +602,6 @@ export default function AdminDashboard({ user }: AdminDashboardProps) {
           )}
         </div>
       )}
-
-      {tab === "seed" && <AdminSeedFilesystem />}
 
       {tab === "settings" && <SettingsTab />}
     </div>

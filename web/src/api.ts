@@ -1,4 +1,4 @@
-import type { User, GpuType, VMRecord, Candidate, AdminSettings, FilesystemRecord, LaunchRequest, SeedingJob } from "./types";
+import type { User, GpuType, VMRecord, Candidate, AdminSettings, FilesystemRecord, LaunchRequest } from "./types";
 
 let _authToken: string | null = null;
 
@@ -109,20 +109,3 @@ export const cancelLaunchRequest = (id: string) =>
     body: JSON.stringify({ id }),
   });
 
-// Seeding
-export const seedFilesystem = (params: {
-  sourceUrl: string;
-  targetRegions: string[];
-  filesystemName: string;
-  instanceType: string;
-}) =>
-  request<SeedingJob>("/api/admin/seed-filesystem", {
-    method: "POST",
-    body: JSON.stringify(params),
-  });
-
-export const getSeedingJobStatus = (jobId: string) =>
-  request<SeedingJob>(`/api/admin/seed-filesystem/status?id=${encodeURIComponent(jobId)}`);
-
-export const listSeedingJobs = () =>
-  request<SeedingJob[]>("/api/admin/seed-filesystem/jobs");

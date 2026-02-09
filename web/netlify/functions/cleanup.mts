@@ -2,11 +2,13 @@ import type { Config } from "@netlify/functions";
 import {
   listVMs, putVM, getCandidate, putCandidate, listVMsByEmail, deleteSshKeyRecord,
   listQueuedLaunchRequests, putLaunchRequest, getSshKey, putSshKey, getSettings, computeSpentCents,
+  listSeedStatuses, deleteSeedStatus,
 } from "./lib/blobs.js";
 import {
   terminateInstances, listInstances, listSshKeys, deleteSshKey,
-  getInstanceTypes, launchInstance, addSshKey, listFilesystems, createFilesystem,
+  getInstanceTypes, launchInstance, addSshKey,
 } from "./lib/lambda-api.js";
+import { resolveFilesystems } from "./lib/filesystem-resolver.js";
 import type { VMRecord } from "./lib/types.js";
 
 export default async () => {
@@ -272,34 +274,61 @@ export default async () => {
       }
     }
 
-    // Handle filesystem
-    let fileSystemNames: string[] | undefined;
-    if (lr.attachFilesystem) {
+    // Resolve filesystems
+    const settings = await getSettings();
+    const appUrl = process.env.URL || "https://get-gpu.netlify.app";
+
+    let fileSystemNames: string[];
+    let readonlyRemountScript: string;
+    let loaderVMs: Array<{ filesystemName: string; seedScript: string; region: string }>;
+    try {
+      const resolved = await resolveFilesystems({
+        region: matchedRegion,
+        candidateEmail: candidate.email,
+        attachPersonalFilesystem: lr.attachFilesystem,
+        settings,
+        appUrl,
+      });
+      fileSystemNames = resolved.fileSystemNames;
+      readonlyRemountScript = resolved.readonlyRemountScript;
+      loaderVMs = resolved.loaderVMs;
+    } catch (err: any) {
+      lr.status = "queued";
+      await putLaunchRequest(lr);
+      console.error(`Cleanup: filesystem error for request ${lr.id}: ${err.message}`);
+      continue;
+    }
+
+    // Launch loader VMs for filesystems that need seeding
+    for (const loader of loaderVMs) {
       try {
-        const sanitized = candidate.email.replace(/[^a-zA-Z0-9]/g, "-");
-        const fsName = `fs-${sanitized}-${matchedRegion}`.replace(/--+/g, "-").slice(0, 60);
-        const existing = await listFilesystems();
-        const match = existing.find((f) => f.name === fsName && f.region.name === matchedRegion);
-        if (match) {
-          fileSystemNames = [match.name];
-        } else {
-          const created = await createFilesystem(fsName, matchedRegion);
-          fileSystemNames = [created.name];
+        const loaderType = Object.entries(instanceTypes)
+          .filter(([, t]) => t.regions_with_capacity_available.some((r) => r.name === loader.region))
+          .sort(([, a], [, b]) => a.instance_type.price_cents_per_hour - b.instance_type.price_cents_per_hour)[0];
+        if (loaderType) {
+          await launchInstance({
+            instance_type_name: loaderType[0],
+            region_name: loader.region,
+            ssh_key_names: [keyName],
+            file_system_names: [loader.filesystemName],
+            user_data: loader.seedScript,
+            name: `seed-${loader.filesystemName}-${loader.region}`,
+          });
+          console.log(`Cleanup: launched loader VM for ${loader.filesystemName} in ${loader.region}`);
         }
       } catch (err: any) {
-        lr.status = "queued";
-        await putLaunchRequest(lr);
-        console.error(`Cleanup: filesystem error for request ${lr.id}: ${err.message}`);
-        continue;
+        console.error(`Cleanup: failed to launch loader VM for ${loader.filesystemName}:`, err.message);
       }
     }
 
-    // Fetch setup script
-    const settings = await getSettings();
-    let userDataScript: string | undefined;
+    // Compose user_data
+    let userDataScript = "#!/bin/bash\nset -euo pipefail\n";
     if (settings?.setupScript) {
       const script = settings.setupScript;
-      userDataScript = script.startsWith("#!") ? script : `#!/bin/bash\n${script}`;
+      userDataScript += (script.startsWith("#!") ? script.replace(/^#!.*\n?/, "") : script) + "\n";
+    }
+    if (readonlyRemountScript) {
+      userDataScript += "\n# Remount shared filesystems as read-only\n" + readonlyRemountScript + "\n";
     }
 
     // Attempt launch
@@ -343,6 +372,23 @@ export default async () => {
       await putLaunchRequest(lr);
       console.error(`Cleanup: launch failed for request ${lr.id}: ${err.message}`);
     }
+  }
+
+  // ===== SECTION 3: Stale Seed Status Cleanup =====
+
+  try {
+    const allSeedStatuses = await listSeedStatuses();
+    for (const ss of allSeedStatuses) {
+      if (ss.status === "seeding" && ss.claimedAt) {
+        const age = Date.now() - new Date(ss.claimedAt).getTime();
+        if (age > 60 * 60 * 1000) {
+          console.log(`Cleanup: clearing stale seed claim for ${ss.filesystemName} in ${ss.region}`);
+          await deleteSeedStatus(ss.filesystemName, ss.region);
+        }
+      }
+    }
+  } catch (err: any) {
+    console.error("Cleanup: failed to clean stale seed statuses:", err.message);
   }
 
   console.log("Cleanup: done");

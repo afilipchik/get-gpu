@@ -1,7 +1,8 @@
 import type { Context } from "@netlify/functions";
 import { authenticate, requireAuth, json } from "./lib/auth.js";
-import { getCandidate, putVM, getSshKey, putSshKey, getSettings, computeSpentCents, listVMsByEmail, listLaunchRequestsByEmail } from "./lib/blobs.js";
-import { launchInstance, getInstanceTypes, addSshKey, listSshKeys, listFilesystems, createFilesystem } from "./lib/lambda-api.js";
+import { putVM, getSshKey, putSshKey, getSettings, computeSpentCents, listVMsByEmail, listLaunchRequestsByEmail } from "./lib/blobs.js";
+import { launchInstance, getInstanceTypes, addSshKey, listSshKeys } from "./lib/lambda-api.js";
+import { resolveFilesystems } from "./lib/filesystem-resolver.js";
 import type { VMRecord } from "./lib/types.js";
 
 export default async (request: Request, _context: Context) => {
@@ -26,7 +27,6 @@ export default async (request: Request, _context: Context) => {
     return json({ error: "Missing instanceType, region, or sshPublicKey" }, 400);
   }
 
-  // Get pricing info for this instance type
   const types = await getInstanceTypes();
   const typeData = types[body.instanceType];
   if (!typeData) {
@@ -35,7 +35,6 @@ export default async (request: Request, _context: Context) => {
 
   const priceCentsPerHour = typeData.instance_type.price_cents_per_hour;
 
-  // Check quota and instance limit (only for candidates, admins bypass)
   if (candidate.role === "candidate") {
     const candidateVMs = await listVMsByEmail(candidate.email);
     const activeVM = candidateVMs.find((vm) => !vm.terminatedAt);
@@ -59,20 +58,15 @@ export default async (request: Request, _context: Context) => {
     }
   }
 
-  // Register SSH key with Lambda if needed
   const keyName = `web-${candidate.email.replace(/[^a-z0-9]/gi, "-")}`;
   const publicKey = body.sshPublicKey.trim();
 
   try {
-    // Check if key already exists in Lambda
     const existingKeys = await listSshKeys();
     const exists = existingKeys.some((k) => k.name === keyName);
-
     if (!exists) {
       await addSshKey(keyName, publicKey);
     }
-
-    // Save to our store
     const existingRecord = await getSshKey(candidate.email, keyName);
     if (!existingRecord || existingRecord.publicKey !== publicKey) {
       await putSshKey({
@@ -83,49 +77,56 @@ export default async (request: Request, _context: Context) => {
       });
     }
   } catch (err: any) {
-    // Key might already exist with same name but different content, try to proceed
     if (!err.message?.includes("already in use")) {
       return json({ error: `SSH key error: ${err.message}` }, 500);
     }
   }
 
-  // Fetch setup script to pass as cloud-init user_data
+  // Resolve filesystems (personal + default shared)
   const settings = await getSettings();
-  let userDataScript: string | undefined;
+  const appUrl = process.env.URL || "https://get-gpu.netlify.app";
+
+  const { fileSystemNames, loaderVMs, readonlyRemountScript } = await resolveFilesystems({
+    region: body.region,
+    candidateEmail: candidate.email,
+    attachPersonalFilesystem: body.attachFilesystem ?? false,
+    settings,
+    appUrl,
+  });
+
+  // Launch loader VMs for filesystems that need seeding
+  for (const loader of loaderVMs) {
+    try {
+      const loaderType = Object.entries(types)
+        .filter(([, t]) => t.regions_with_capacity_available.some((r) => r.name === loader.region))
+        .sort(([, a], [, b]) => a.instance_type.price_cents_per_hour - b.instance_type.price_cents_per_hour)[0];
+
+      if (loaderType) {
+        await launchInstance({
+          instance_type_name: loaderType[0],
+          region_name: loader.region,
+          ssh_key_names: [keyName],
+          file_system_names: [loader.filesystemName],
+          user_data: loader.seedScript,
+          name: `seed-${loader.filesystemName}-${loader.region}`,
+        });
+        console.log(`Launched loader VM for ${loader.filesystemName} in ${loader.region}`);
+      } else {
+        console.error(`No capacity for loader VM in ${loader.region}`);
+      }
+    } catch (err: any) {
+      console.error(`Failed to launch loader VM for ${loader.filesystemName}:`, err.message);
+    }
+  }
+
+  // Compose user_data script
+  let userDataScript = "#!/bin/bash\nset -euo pipefail\n";
   if (settings?.setupScript) {
     const script = settings.setupScript;
-    userDataScript = script.startsWith("#!") ? script : `#!/bin/bash\n${script}`;
+    userDataScript += (script.startsWith("#!") ? script.replace(/^#!.*\n?/, "") : script) + "\n";
   }
-
-  // Filesystem: attach user's personal filesystem + default shared filesystems
-  let fileSystemNames: string[] = [];
-
-  // 1. User's personal filesystem (if requested)
-  if (body.attachFilesystem) {
-    const sanitized = candidate.email.replace(/[^a-zA-Z0-9]/g, "-");
-    const fsName = `fs-${sanitized}-${body.region}`.replace(/--+/g, "-").slice(0, 60);
-
-    const existing = await listFilesystems();
-    const match = existing.find((f) => f.name === fsName && f.region.name === body.region);
-
-    if (match) {
-      fileSystemNames.push(match.name);
-    } else {
-      const created = await createFilesystem(fsName, body.region);
-      fileSystemNames.push(created.name);
-    }
-  }
-
-  // 2. Default shared filesystems (auto-attached from admin settings)
-  if (settings?.defaultFilesystemNames) {
-    const existing = await listFilesystems();
-    for (const fsName of settings.defaultFilesystemNames) {
-      // Check if filesystem exists in this region
-      const match = existing.find((f) => f.name === fsName && f.region.name === body.region);
-      if (match && !fileSystemNames.includes(match.name)) {
-        fileSystemNames.push(match.name);
-      }
-    }
+  if (readonlyRemountScript) {
+    userDataScript += "\n# Remount shared filesystems as read-only\n" + readonlyRemountScript + "\n";
   }
 
   // Launch instance
@@ -158,7 +159,6 @@ export default async (request: Request, _context: Context) => {
     };
 
     await putVM(vmRecord);
-
     return json(vmRecord, 201);
   } catch (err: any) {
     console.error("Launch failed:", err.message);

@@ -1,5 +1,5 @@
 import { getStore } from "@netlify/blobs";
-import type { CandidateRecord, VMRecord, SshKeyRecord, AdminSettings, LaunchRequest, SeedingJob } from "./types.js";
+import type { CandidateRecord, VMRecord, SshKeyRecord, AdminSettings, LaunchRequest, FilesystemSeedStatus } from "./types.js";
 
 function store(name: string) {
   return getStore({ name, consistency: "strong" });
@@ -152,26 +152,70 @@ export async function putSettings(settings: AdminSettings): Promise<void> {
   await s.setJSON("admin", settings);
 }
 
-// --- Seeding Jobs ---
+// --- Filesystem Seed Status ---
 
-export async function getSeedingJob(id: string): Promise<SeedingJob | null> {
-  const s = store("seeding-jobs");
-  const data = await s.get(id, { type: "json" });
-  return data as SeedingJob | null;
+function seedStatusKey(filesystemName: string, region: string): string {
+  return `${filesystemName}:${region}`;
 }
 
-export async function putSeedingJob(job: SeedingJob): Promise<void> {
-  const s = store("seeding-jobs");
-  await s.setJSON(job.id, job);
+export async function getSeedStatus(
+  filesystemName: string,
+  region: string,
+): Promise<FilesystemSeedStatus | null> {
+  const s = store("seed-status");
+  const data = await s.get(seedStatusKey(filesystemName, region), { type: "json" });
+  return data as FilesystemSeedStatus | null;
 }
 
-export async function listSeedingJobs(): Promise<SeedingJob[]> {
-  const s = store("seeding-jobs");
+export async function putSeedStatus(status: FilesystemSeedStatus): Promise<void> {
+  const s = store("seed-status");
+  await s.setJSON(seedStatusKey(status.filesystemName, status.region), status);
+}
+
+export async function deleteSeedStatus(
+  filesystemName: string,
+  region: string,
+): Promise<void> {
+  const s = store("seed-status");
+  await s.delete(seedStatusKey(filesystemName, region));
+}
+
+export async function listSeedStatuses(): Promise<FilesystemSeedStatus[]> {
+  const s = store("seed-status");
   const { blobs } = await s.list();
-  const results: SeedingJob[] = [];
+  const results: FilesystemSeedStatus[] = [];
   for (const blob of blobs) {
     const data = await s.get(blob.key, { type: "json" });
-    if (data) results.push(data as SeedingJob);
+    if (data) results.push(data as FilesystemSeedStatus);
   }
   return results;
+}
+
+/**
+ * Attempt to claim seeding rights for a filesystem+region.
+ * Returns true if this caller won the claim, false if already claimed or ready.
+ * Stale claims (older than staleMinutes) are automatically overridden.
+ */
+export async function claimSeedingLock(
+  filesystemName: string,
+  region: string,
+  instanceId: string,
+  staleMinutes = 60,
+): Promise<boolean> {
+  const existing = await getSeedStatus(filesystemName, region);
+
+  if (existing) {
+    if (existing.status === "ready") return false;
+    const age = Date.now() - new Date(existing.claimedAt).getTime();
+    if (age < staleMinutes * 60 * 1000) return false;
+  }
+
+  await putSeedStatus({
+    filesystemName,
+    region,
+    status: "seeding",
+    seedingInstanceId: instanceId,
+    claimedAt: new Date().toISOString(),
+  });
+  return true;
 }
