@@ -75,6 +75,7 @@ export interface DefaultFilesystem {
   sourceType: "gcs" | "r2";
   sourceUrl: string;
   credentials: string;
+  downloadScript?: string;
 }
 
 export interface AdminSettings {

@@ -228,7 +228,7 @@ function SettingsTab() {
                 style={{ width: "100%", boxSizing: "border-box" }}
               />
             </div>
-            <div>
+            <div style={{ marginBottom: 8 }}>
               <label style={{ fontSize: 12, color: "var(--text-muted)" }}>
                 Credentials {fs.credentials === "***" ? "(saved)" : ""}
               </label>
@@ -243,6 +243,24 @@ function SettingsTab() {
                       : '{"accountId": "...", "accessKeyId": "...", "secretAccessKey": "..."}'
                 }
                 rows={3}
+                style={{
+                  width: "100%",
+                  boxSizing: "border-box",
+                  fontFamily: "monospace",
+                  fontSize: 12,
+                }}
+              />
+            </div>
+            <div>
+              <label style={{ fontSize: 12, color: "var(--text-muted)" }}>
+                Download Script (optional)
+              </label>
+              <textarea
+                value={fs.downloadScript ?? ""}
+                onChange={(e) => updateFs(i, { downloadScript: e.target.value || undefined })}
+                placeholder={`Custom download commands. If empty, uses default gsutil/aws cp.\nAvailable env vars: $NFS_PATH (target dir), $CREDS_FILE (credentials path)\n\nExample:\ngcloud auth activate-service-account --key-file="$CREDS_FILE"\ngsutil ls -lh 'gs://bucket' > /tmp/files.txt\ngsutil -m cp $(grep 'train.*tfrecord' /tmp/files.txt | awk '{print $4}') "$NFS_PATH"/`}
+                rows={5}
+                spellCheck={false}
                 style={{
                   width: "100%",
                   boxSizing: "border-box",

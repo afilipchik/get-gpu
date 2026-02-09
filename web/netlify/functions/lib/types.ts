@@ -83,6 +83,9 @@ export interface DefaultFilesystem {
   sourceType: "gcs" | "r2";
   sourceUrl: string;
   credentials: string;
+  /** Custom download script. When set, replaces the default download command.
+   *  Available env vars: $NFS_PATH (target directory), $CREDS_FILE (path to credentials file). */
+  downloadScript?: string;
 }
 
 export interface FilesystemSeedStatus {

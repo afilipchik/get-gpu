@@ -82,6 +82,7 @@ export async function resolveFilesystems(params: {
               callbackUrl,
               callbackSecret,
               region,
+              downloadScript: dfs.downloadScript,
             });
 
             loaderVMs.push({

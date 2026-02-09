@@ -6,15 +6,30 @@ export function generateSeedingScript(params: {
   callbackUrl: string;
   callbackSecret: string;
   region: string;
+  downloadScript?: string;
 }): string {
-  const { sourceType, sourceUrl, credentials, filesystemName, callbackUrl, callbackSecret, region } = params;
+  const { sourceType, sourceUrl, credentials, filesystemName, callbackUrl, callbackSecret, region, downloadScript } = params;
 
   const escapedCreds = credentials.replace(/'/g, "'\\''");
   const nfsPath = `/lambda/nfs/${filesystemName}`;
 
   let downloadSection: string;
 
-  if (sourceType === "gcs") {
+  if (downloadScript) {
+    // Custom download script provided by admin.
+    // Write credentials to a file and expose NFS_PATH + CREDS_FILE env vars.
+    downloadSection = `
+echo "Writing credentials file..."
+export CREDS_FILE="/tmp/seed-credentials.json"
+echo '${escapedCreds}' > "$CREDS_FILE"
+export NFS_PATH='${nfsPath}'
+
+echo "Running custom download script..."
+${downloadScript}
+
+rm -f "$CREDS_FILE"
+`;
+  } else if (sourceType === "gcs") {
     downloadSection = `
 echo "Installing gsutil..."
 pip3 install gsutil --quiet
