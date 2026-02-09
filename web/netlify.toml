@@ -71,6 +71,31 @@
   to = "/.netlify/functions/launch-requests"
   status = 200
 
+[[redirects]]
+  from = "/api/admin/filesystems"
+  to = "/.netlify/functions/filesystems-delete"
+  status = 200
+
+[[redirects]]
+  from = "/api/filesystems"
+  to = "/.netlify/functions/filesystems-list"
+  status = 200
+
+[[redirects]]
+  from = "/api/admin/seed-filesystem/status"
+  to = "/.netlify/functions/admin-seed-status"
+  status = 200
+
+[[redirects]]
+  from = "/api/admin/seed-filesystem/jobs"
+  to = "/.netlify/functions/admin-seed-jobs"
+  status = 200
+
+[[redirects]]
+  from = "/api/admin/seed-filesystem"
+  to = "/.netlify/functions/admin-seed-filesystem"
+  status = 200
+
 # SPA fallback
 [[redirects]]
   from = "/*"
