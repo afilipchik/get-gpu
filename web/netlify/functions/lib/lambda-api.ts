@@ -57,14 +57,14 @@ export async function getInstance(id: string): Promise<LambdaInstance> {
 export async function listFilesystems(): Promise<
   Array<{ id: string; name: string; region: { name: string }; is_in_use: boolean; bytes_used: number; created: string }>
 > {
-  const res = await request("/file-systems");
+  const res = await request("/filesystems");
   await assertOk(res);
   const body = await res.json();
   return (body as { data: Array<{ id: string; name: string; region: { name: string }; is_in_use: boolean; bytes_used: number; created: string }> }).data;
 }
 
 export async function deleteFilesystem(id: string): Promise<void> {
-  const res = await request(`/file-systems/${encodeURIComponent(id)}`, { method: "DELETE" });
+  const res = await request(`/filesystems/${encodeURIComponent(id)}`, { method: "DELETE" });
   await assertOk(res);
 }
 
