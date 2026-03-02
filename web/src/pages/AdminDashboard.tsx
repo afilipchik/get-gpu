@@ -117,7 +117,7 @@ function SettingsTab() {
         <label style={{ display: "block", marginBottom: 4, fontWeight: 500 }}>
           Setup Script
         </label>
-        <div style={{ position: "relative" }}>
+        <div style={{ position: "relative", overflow: "hidden" }}>
           <pre
             ref={preRef}
             aria-hidden="true"
