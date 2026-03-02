@@ -117,16 +117,12 @@ function SettingsTab() {
         <label style={{ display: "block", marginBottom: 4, fontWeight: 500 }}>
           Setup Script
         </label>
-        <div style={{ position: "relative", overflow: "hidden" }}>
+        <div style={{ display: "grid" }}>
           <pre
             ref={preRef}
             aria-hidden="true"
             style={{
-              position: "absolute",
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
+              gridArea: "1 / 1",
               margin: 0,
               padding: "8px 12px",
               boxSizing: "border-box",
@@ -156,6 +152,7 @@ function SettingsTab() {
             rows={12}
             spellCheck={false}
             style={{
+              gridArea: "1 / 1",
               width: "100%",
               boxSizing: "border-box",
               fontFamily: "monospace",
@@ -166,7 +163,6 @@ function SettingsTab() {
               color: "transparent",
               caretColor: "var(--text)",
               resize: "vertical",
-              position: "relative",
             }}
           />
         </div>
