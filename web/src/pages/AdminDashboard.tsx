@@ -129,6 +129,7 @@ function SettingsTab() {
               bottom: 0,
               margin: 0,
               padding: "8px 12px",
+              boxSizing: "border-box",
               fontFamily: "monospace",
               fontSize: 13,
               lineHeight: "1.5",
