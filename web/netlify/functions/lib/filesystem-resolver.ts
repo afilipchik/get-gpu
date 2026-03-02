@@ -29,7 +29,10 @@ export async function resolveFilesystems(params: {
   const loaderVMs: ResolvedFilesystems["loaderVMs"] = [];
   const readonlyMounts: string[] = [];
 
+  console.log(`[resolveFS] region=${region} email=${candidateEmail} attachPersonal=${attachPersonalFilesystem} defaultFS=${settings?.defaultFilesystems?.length ?? 0}`);
+
   const existingFilesystems = await listFilesystems();
+  console.log(`[resolveFS] existing filesystems: ${existingFilesystems.map(f => `${f.name}@${f.region.name}`).join(", ") || "none"}`);
 
   // 1. User's personal filesystem (read-write)
   if (attachPersonalFilesystem) {
@@ -38,13 +41,16 @@ export async function resolveFilesystems(params: {
     const match = existingFilesystems.find((f) => f.name === fsName && f.region.name === region);
 
     if (match) {
+      console.log(`[resolveFS] personal FS ${fsName} already exists`);
       fileSystemNames.push(match.name);
     } else {
       try {
+        console.log(`[resolveFS] creating personal FS ${fsName} in ${region}`);
         const created = await createFilesystem(fsName, region);
+        console.log(`[resolveFS] created personal FS: ${created.name}`);
         fileSystemNames.push(created.name);
       } catch (err: any) {
-        console.error(`Failed to create personal filesystem ${fsName}:`, err.message);
+        console.error(`[resolveFS] Failed to create personal filesystem ${fsName}:`, err.message);
       }
     }
   }
@@ -55,10 +61,12 @@ export async function resolveFilesystems(params: {
     const callbackSecret = settings.seedCompleteSecret ?? "";
 
     for (const dfs of settings.defaultFilesystems) {
+      console.log(`[resolveFS] checking default FS "${dfs.name}" in region ${region}`);
       const match = existingFilesystems.find((f) => f.name === dfs.name && f.region.name === region);
 
       if (match) {
         // FS exists — attach and remount readonly
+        console.log(`[resolveFS] default FS "${dfs.name}" exists in ${region}, attaching readonly`);
         if (!fileSystemNames.includes(match.name)) {
           fileSystemNames.push(match.name);
         }
@@ -66,7 +74,9 @@ export async function resolveFilesystems(params: {
       } else {
         // FS doesn't exist — create, claim seed lock, queue loader VM
         try {
+          console.log(`[resolveFS] creating default FS "${dfs.name}" in ${region}`);
           const created = await createFilesystem(dfs.name, region);
+          console.log(`[resolveFS] created default FS: ${created.name}`);
           fileSystemNames.push(created.name);
 
           // Try to claim seeding rights
@@ -95,7 +105,7 @@ export async function resolveFilesystems(params: {
           // User VM gets readonly mount regardless
           readonlyMounts.push(`sudo mount -o remount,ro /lambda/nfs/${dfs.name} 2>/dev/null || true`);
         } catch (err: any) {
-          console.error(`Failed to create/seed filesystem ${dfs.name} in ${region}:`, err.message);
+          console.error(`[resolveFS] Failed to create/seed filesystem ${dfs.name} in ${region}:`, err.message);
         }
       }
     }
@@ -105,5 +115,6 @@ export async function resolveFilesystems(params: {
     ? readonlyMounts.join("\n")
     : "";
 
+  console.log(`[resolveFS] result: attach=[${fileSystemNames.join(",")}] loaders=${loaderVMs.length} readonlyMounts=${readonlyMounts.length}`);
   return { fileSystemNames, loaderVMs, readonlyRemountScript };
 }
