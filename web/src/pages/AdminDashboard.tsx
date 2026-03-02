@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import type { User, VMRecord, Candidate, AdminSettings, DefaultFilesystem, FilesystemRecord, LaunchRequest, GpuType } from "../types";
 import { fetchVMs, fetchCandidates, fetchSettings, updateSettings, fetchFilesystems, deleteFilesystem, fetchLaunchRequests, fetchGpuTypes } from "../api";
 import VMCard from "../components/VMCard";
@@ -28,6 +28,7 @@ function SettingsTab() {
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const preRef = useRef<HTMLPreElement>(null);
 
   useEffect(() => {
     fetchSettings()
@@ -118,6 +119,7 @@ function SettingsTab() {
         </label>
         <div style={{ position: "relative" }}>
           <pre
+            ref={preRef}
             aria-hidden="true"
             style={{
               position: "absolute",
@@ -132,7 +134,7 @@ function SettingsTab() {
               lineHeight: "1.5",
               whiteSpace: "pre-wrap",
               wordWrap: "break-word",
-              overflow: "auto",
+              overflow: "hidden",
               border: "1px solid transparent",
               pointerEvents: "none",
               background: "transparent",
@@ -143,6 +145,12 @@ function SettingsTab() {
           <textarea
             value={setupScript}
             onChange={(e) => setSetupScript(e.target.value)}
+            onScroll={(e) => {
+              if (preRef.current) {
+                preRef.current.scrollTop = e.currentTarget.scrollTop;
+                preRef.current.scrollLeft = e.currentTarget.scrollLeft;
+              }
+            }}
             placeholder='e.g. pip install "ray[default]" && ray start --head'
             rows={12}
             spellCheck={false}
