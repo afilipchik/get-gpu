@@ -74,7 +74,7 @@ export async function createFilesystem(
 ): Promise<{ id: string; name: string }> {
   const res = await request("/filesystems", {
     method: "POST",
-    body: JSON.stringify({ name, region }),
+    body: JSON.stringify({ name, region_name: region }),
   });
   await assertOk(res);
   const body = await res.json();
