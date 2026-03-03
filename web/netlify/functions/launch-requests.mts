@@ -211,8 +211,8 @@ export default async (request: Request, _context: Context) => {
           instance_type_name: immediateType,
           region_name: immediateRegion,
           ssh_key_names: [keyName],
-          file_system_names: fileSystemNames,
-          user_data: userDataScript,
+          file_system_names: fileSystemNames.length > 0 ? fileSystemNames : undefined,
+          user_data: userDataScript.trim() === "#!/bin/bash\nset -euo pipefail" ? undefined : userDataScript,
         });
 
         const instanceId = result.instance_ids[0];
