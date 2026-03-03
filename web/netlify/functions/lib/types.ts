@@ -27,6 +27,8 @@ export interface VMRecord {
   terminationReason: string | null;
   lastCheckedAt: string;
   accruedCents: number;
+  /** True when the VM is seeding shared filesystem data on first boot */
+  bootstrappingData?: boolean;
 }
 
 export interface SshKeyRecord {

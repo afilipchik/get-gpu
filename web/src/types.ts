@@ -28,6 +28,7 @@ export interface VMRecord {
   terminationReason: string | null;
   lastCheckedAt: string;
   accruedCents: number;
+  bootstrappingData?: boolean;
 }
 
 export interface Candidate {

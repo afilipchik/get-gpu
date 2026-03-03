@@ -208,6 +208,7 @@ export default async (request: Request, _context: Context) => {
           terminationReason: null,
           lastCheckedAt: new Date().toISOString(),
           accruedCents: 0,
+          bootstrappingData: seedingScript ? true : undefined,
         };
         await putVM(vmRecord);
 

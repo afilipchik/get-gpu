@@ -84,6 +84,11 @@ export default function VMCard({ vm, showEmail, onTerminated }: VMCardProps) {
       <div className="card-header" style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
         <h3 style={{ margin: 0 }}>{vm.instanceType}</h3>
         <span className={`status ${statusClass(vm.status)}`}>{vm.status}</span>
+        {vm.bootstrappingData && !vm.terminatedAt && (
+          <span className="status status-launching" title="Downloading shared dataset to filesystem">
+            Bootstrapping data...
+          </span>
+        )}
         {isActive && (
           <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
             <button

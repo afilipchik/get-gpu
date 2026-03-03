@@ -70,6 +70,22 @@ unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY
   SEED_STATUS='${seedStatus}'
   NFS_PATH='${nfsPath}'
   STALE_SECONDS=300
+  MOTD_FILE="/etc/motd.d/seed-${filesystemName}" 2>/dev/null || MOTD_FILE="/tmp/.seed-motd-${filesystemName}"
+  mkdir -p "$(dirname "$MOTD_FILE")" 2>/dev/null || true
+
+  seed_set_banner() {
+    echo "" > "$MOTD_FILE"
+    echo "========================================================" >> "$MOTD_FILE"
+    echo "  DATA BOOTSTRAPPING IN PROGRESS: ${filesystemName}" >> "$MOTD_FILE"
+    echo "  $1" >> "$MOTD_FILE"
+    echo "  Check progress: tail -f /var/log/cloud-init-output.log" >> "$MOTD_FILE"
+    echo "========================================================" >> "$MOTD_FILE"
+    echo "" >> "$MOTD_FILE"
+  }
+
+  seed_clear_banner() {
+    rm -f "$MOTD_FILE"
+  }
 
   seed_check_ready() {
     [ -f "$SEED_STATUS" ] && grep -q "status=ready" "$SEED_STATUS"
@@ -95,10 +111,12 @@ unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY
   # Check if another VM is actively seeding
   if seed_check_active; then
     echo "[seed] Another VM is seeding ${filesystemName}, waiting..."
+    seed_set_banner "Waiting for another VM to finish seeding..."
     while true; do
       sleep 30
       if seed_check_ready; then
         echo "[seed] FS ${filesystemName} seeding complete, remounting readonly"
+        seed_clear_banner
         sudo mount -o remount,ro '${nfsPath}' 2>/dev/null || true
         exit 0
       fi
@@ -110,6 +128,7 @@ unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY
   fi
 
   # Claim lock and start seeding
+  seed_set_banner "Downloading data..."
   echo "[seed] Claiming seed lock for ${filesystemName}"
   echo "status=seeding
 started=$(date -u +%Y-%m-%dT%H:%M:%SZ)
@@ -139,6 +158,7 @@ ${downloadSection}
   echo "status=ready
 completed=$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$SEED_STATUS"
 
+  seed_clear_banner
   echo "[seed] FS ${filesystemName} seeding complete, remounting readonly"
   sudo mount -o remount,ro '${nfsPath}' 2>/dev/null || true
 ) || echo "[seed] WARNING: Seeding failed for ${filesystemName}, continuing boot"
