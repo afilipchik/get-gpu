@@ -92,6 +92,8 @@ export default async (request: Request, _context: Context) => {
     settings,
   });
 
+  console.log(`[vm-launch] filesystems=${JSON.stringify(fileSystemNames)} seedingScript=${seedingScript ? `${seedingScript.length} chars` : "empty"} defaultFS=${JSON.stringify(settings?.defaultFilesystems?.map(f => f.name) ?? [])}`);
+
   // Compose user_data: seeding first, then setup script
   let userDataScript = "#!/bin/bash\n";
   if (seedingScript) {
