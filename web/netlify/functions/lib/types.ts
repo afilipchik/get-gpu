@@ -88,18 +88,8 @@ export interface DefaultFilesystem {
   downloadScript?: string;
 }
 
-export interface FilesystemSeedStatus {
-  filesystemName: string;
-  region: string;
-  status: "seeding" | "ready";
-  seedingInstanceId?: string;
-  claimedAt: string;
-  completedAt?: string;
-}
-
 export interface AdminSettings {
   lambdaApiKey?: string;
   setupScript?: string;
   defaultFilesystems?: DefaultFilesystem[];
-  seedCompleteSecret?: string;
 }

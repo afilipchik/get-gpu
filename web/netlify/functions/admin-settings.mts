@@ -89,13 +89,6 @@ export default async (request: Request, _context: Context) => {
       });
     }
 
-    // Handle seed complete secret (auto-generate if not set)
-    if (body.seedCompleteSecret !== undefined) {
-      updated.seedCompleteSecret = body.seedCompleteSecret;
-    } else if (!updated.seedCompleteSecret) {
-      updated.seedCompleteSecret = crypto.randomUUID();
-    }
-
     // Test connection if requested
     if (body.testConnection) {
       const keyToTest = updated.lambdaApiKey ?? process.env.LAMBDA_API_KEY;

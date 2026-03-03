@@ -2,7 +2,6 @@ import type { Config } from "@netlify/functions";
 import {
   listVMs, putVM, getCandidate, putCandidate, listVMsByEmail, deleteSshKeyRecord,
   listQueuedLaunchRequests, putLaunchRequest, getSshKey, putSshKey, getSettings, computeSpentCents,
-  listSeedStatuses, deleteSeedStatus,
 } from "./lib/blobs.js";
 import {
   terminateInstances, listInstances, listSshKeys, deleteSshKey,
@@ -276,22 +275,18 @@ export default async () => {
 
     // Resolve filesystems
     const settings = await getSettings();
-    const appUrl = process.env.URL || "https://get-gpu.netlify.app";
 
     let fileSystemNames: string[];
-    let readonlyRemountScript: string;
-    let loaderVMs: Array<{ filesystemName: string; seedScript: string; region: string }>;
+    let seedingScript: string;
     try {
       const resolved = await resolveFilesystems({
         region: matchedRegion,
         candidateEmail: candidate.email,
         attachPersonalFilesystem: lr.attachFilesystem,
         settings,
-        appUrl,
       });
       fileSystemNames = resolved.fileSystemNames;
-      readonlyRemountScript = resolved.readonlyRemountScript;
-      loaderVMs = resolved.loaderVMs;
+      seedingScript = resolved.seedingScript;
     } catch (err: any) {
       lr.status = "queued";
       await putLaunchRequest(lr);
@@ -299,36 +294,14 @@ export default async () => {
       continue;
     }
 
-    // Launch loader VMs for filesystems that need seeding
-    for (const loader of loaderVMs) {
-      try {
-        const loaderType = Object.entries(instanceTypes)
-          .filter(([, t]) => t.regions_with_capacity_available.some((r) => r.name === loader.region))
-          .sort(([, a], [, b]) => a.instance_type.price_cents_per_hour - b.instance_type.price_cents_per_hour)[0];
-        if (loaderType) {
-          await launchInstance({
-            instance_type_name: loaderType[0],
-            region_name: loader.region,
-            ssh_key_names: [keyName],
-            file_system_names: [loader.filesystemName],
-            user_data: loader.seedScript,
-            name: `seed-${loader.filesystemName}-${loader.region}`,
-          });
-          console.log(`Cleanup: launched loader VM for ${loader.filesystemName} in ${loader.region}`);
-        }
-      } catch (err: any) {
-        console.error(`Cleanup: failed to launch loader VM for ${loader.filesystemName}:`, err.message);
-      }
+    // Compose user_data: seeding first, then setup script
+    let userDataScript = "#!/bin/bash\n";
+    if (seedingScript) {
+      userDataScript += seedingScript + "\n";
     }
-
-    // Compose user_data
-    let userDataScript = "#!/bin/bash\nset -euo pipefail\n";
     if (settings?.setupScript) {
       const script = settings.setupScript;
       userDataScript += (script.startsWith("#!") ? script.replace(/^#!.*\n?/, "") : script) + "\n";
-    }
-    if (readonlyRemountScript) {
-      userDataScript += "\n# Remount shared filesystems as read-only\n" + readonlyRemountScript + "\n";
     }
 
     // Attempt launch
@@ -338,7 +311,7 @@ export default async () => {
         region_name: matchedRegion,
         ssh_key_names: [keyName],
         file_system_names: fileSystemNames.length > 0 ? fileSystemNames : undefined,
-        user_data: userDataScript.trim() === "#!/bin/bash\nset -euo pipefail" ? undefined : userDataScript,
+        user_data: userDataScript.trim() === "#!/bin/bash" ? undefined : userDataScript,
       });
 
       const instanceId = result.instance_ids[0];
@@ -372,23 +345,6 @@ export default async () => {
       await putLaunchRequest(lr);
       console.error(`Cleanup: launch failed for request ${lr.id}: ${err.message}`);
     }
-  }
-
-  // ===== SECTION 3: Stale Seed Status Cleanup =====
-
-  try {
-    const allSeedStatuses = await listSeedStatuses();
-    for (const ss of allSeedStatuses) {
-      if (ss.status === "seeding" && ss.claimedAt) {
-        const age = Date.now() - new Date(ss.claimedAt).getTime();
-        if (age > 60 * 60 * 1000) {
-          console.log(`Cleanup: clearing stale seed claim for ${ss.filesystemName} in ${ss.region}`);
-          await deleteSeedStatus(ss.filesystemName, ss.region);
-        }
-      }
-    }
-  } catch (err: any) {
-    console.error("Cleanup: failed to clean stale seed statuses:", err.message);
   }
 
   console.log("Cleanup: done");

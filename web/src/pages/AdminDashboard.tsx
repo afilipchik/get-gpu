@@ -23,7 +23,6 @@ function SettingsTab() {
   const [apiKey, setApiKey] = useState("");
   const [setupScript, setSetupScript] = useState("");
   const [defaultFilesystems, setDefaultFilesystems] = useState<DefaultFilesystem[]>([]);
-  const [seedCompleteSecret, setSeedCompleteSecret] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
@@ -36,7 +35,6 @@ function SettingsTab() {
         setApiKey(s.lambdaApiKey ?? "");
         setSetupScript(s.setupScript ?? "");
         setDefaultFilesystems(s.defaultFilesystems ?? []);
-        setSeedCompleteSecret(s.seedCompleteSecret ?? "");
       })
       .catch(() => {})
       .finally(() => setLoading(false));
@@ -64,7 +62,6 @@ function SettingsTab() {
       setApiKey(result.lambdaApiKey ?? "");
       setSetupScript(result.setupScript ?? "");
       setDefaultFilesystems(result.defaultFilesystems ?? []);
-      setSeedCompleteSecret(result.seedCompleteSecret ?? "");
       setMessage({ type: "success", text: "Settings saved." });
     } catch (err: any) {
       setMessage({ type: "error", text: err.message });
@@ -285,29 +282,6 @@ function SettingsTab() {
           + Add Filesystem
         </button>
       </div>
-
-      {seedCompleteSecret && (
-        <div style={{ marginBottom: 16 }}>
-          <label style={{ display: "block", marginBottom: 4, fontWeight: 500 }}>
-            Seed Complete Secret
-          </label>
-          <input
-            type="text"
-            value={seedCompleteSecret}
-            readOnly
-            style={{
-              width: "100%",
-              boxSizing: "border-box",
-              fontFamily: "monospace",
-              fontSize: 12,
-              background: "var(--bg-secondary, #f5f5f5)",
-            }}
-          />
-          <p style={{ color: "var(--text-muted)", fontSize: 12, marginTop: 4 }}>
-            Auto-generated. Used by loader VMs to report seeding completion.
-          </p>
-        </div>
-      )}
 
       {message && (
         <div

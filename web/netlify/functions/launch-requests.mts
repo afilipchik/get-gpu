@@ -165,46 +165,22 @@ export default async (request: Request, _context: Context) => {
       // Attempt immediate launch
       try {
         const settings = await getSettings();
-        const appUrl = process.env.URL || "https://get-gpu.netlify.app";
 
-        const { fileSystemNames, loaderVMs, readonlyRemountScript } = await resolveFilesystems({
+        const { fileSystemNames, seedingScript } = await resolveFilesystems({
           region: immediateRegion,
           candidateEmail: candidate.email,
           attachPersonalFilesystem: body.attachFilesystem ?? false,
           settings,
-          appUrl,
         });
 
-        // Launch loader VMs for filesystems that need seeding
-        const instanceTypes = types;
-        for (const loader of loaderVMs) {
-          try {
-            const loaderType = Object.entries(instanceTypes)
-              .filter(([, t]) => t.regions_with_capacity_available.some((r) => r.name === loader.region))
-              .sort(([, a], [, b]) => a.instance_type.price_cents_per_hour - b.instance_type.price_cents_per_hour)[0];
-            if (loaderType) {
-              await launchInstance({
-                instance_type_name: loaderType[0],
-                region_name: loader.region,
-                ssh_key_names: [keyName],
-                file_system_names: [loader.filesystemName],
-                user_data: loader.seedScript,
-                name: `seed-${loader.filesystemName}-${loader.region}`,
-              });
-            }
-          } catch (err: any) {
-            console.error(`Failed to launch loader VM for ${loader.filesystemName}:`, err.message);
-          }
+        // Compose user_data: seeding first, then setup script
+        let userDataScript = "#!/bin/bash\n";
+        if (seedingScript) {
+          userDataScript += seedingScript + "\n";
         }
-
-        // Compose user_data
-        let userDataScript = "#!/bin/bash\nset -euo pipefail\n";
         if (settings?.setupScript) {
           const script = settings.setupScript;
           userDataScript += (script.startsWith("#!") ? script.replace(/^#!.*\n?/, "") : script) + "\n";
-        }
-        if (readonlyRemountScript) {
-          userDataScript += "\n# Remount shared filesystems as read-only\n" + readonlyRemountScript + "\n";
         }
 
         const result = await launchInstance({
@@ -212,7 +188,7 @@ export default async (request: Request, _context: Context) => {
           region_name: immediateRegion,
           ssh_key_names: [keyName],
           file_system_names: fileSystemNames.length > 0 ? fileSystemNames : undefined,
-          user_data: userDataScript.trim() === "#!/bin/bash\nset -euo pipefail" ? undefined : userDataScript,
+          user_data: userDataScript.trim() === "#!/bin/bash" ? undefined : userDataScript,
         });
 
         const instanceId = result.instance_ids[0];

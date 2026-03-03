@@ -81,11 +81,6 @@
   to = "/.netlify/functions/filesystems-list"
   status = 200
 
-[[redirects]]
-  from = "/api/seed-complete"
-  to = "/.netlify/functions/seed-complete"
-  status = 200
-
 # SPA fallback
 [[redirects]]
   from = "/*"

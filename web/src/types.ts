@@ -82,5 +82,4 @@ export interface AdminSettings {
   lambdaApiKey?: string;
   setupScript?: string;
   defaultFilesystems?: DefaultFilesystem[];
-  seedCompleteSecret?: string;
 }
