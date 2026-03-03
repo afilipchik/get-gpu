@@ -18,12 +18,17 @@ export function generateSeedingScript(params: {
   if (downloadScript) {
     // Custom download script provided by admin.
     // Write credentials to a file and expose NFS_PATH + CREDS_FILE env vars.
+    // For GCS, also activate the service account so gsutil/gcloud commands work.
+    const gcsAuthStep = sourceType === "gcs" ? `
+echo "Authenticating with GCS..."
+gcloud auth activate-service-account --key-file="$CREDS_FILE"
+` : "";
     downloadSection = `
 echo "Writing credentials file..."
 export CREDS_FILE="/tmp/seed-credentials.json"
 echo '${escapedCreds}' > "$CREDS_FILE"
 export NFS_PATH='${nfsPath}'
-
+${gcsAuthStep}
 echo "Running custom download script..."
 ${downloadScript}
 
